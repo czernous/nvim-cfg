@@ -3,7 +3,7 @@ return {
 
     {
         "neovim/nvim-lspconfig",
-        event = "LazyFile",
+        -- event = "LazyFile",
         dependencies = {
           { "folke/neoconf.nvim", cmd = "Neoconf", config = false, dependencies = { "nvim-lspconfig" } },
             -- Automatically install LSPs to stdpath for neovim
