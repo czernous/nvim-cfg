@@ -19,7 +19,7 @@ vim.keymap.set("n", "<leader>ttq", "<cmd>TroubleToggle quickfix<cr>",
   {silent = true, noremap = true},
   {desc = "[t]rouble[toggle] [q]uickfix"}
 )
-vim.keymap.set("n", "gR", "<cmd>TroubleToggle lsp_references<cr>",
+vim.keymap.set("n", "tgR", "<cmd>TroubleToggle lsp_references<cr>",
   {silent = true, noremap = true},
   {desc = "TroubleToggle lsp_references"}
 )
@@ -27,7 +27,7 @@ vim.keymap.set("n", "gR", "<cmd>TroubleToggle lsp_references<cr>",
 return {
   {
     "folke/trouble.nvim",
-    requires = "nvim-tree/nvim-web-devicons",
+    dependencies = "nvim-tree/nvim-web-devicons",
     config = function()
         require("trouble").setup {
             -- your configuration comes here
