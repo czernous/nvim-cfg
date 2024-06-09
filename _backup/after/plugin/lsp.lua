@@ -18,7 +18,7 @@ lsp.ensure_installed({
     'gopls',
     'golangci_lint_ls',
     'jsonls',
-    'bashls'
+    'bashls',
 })
 
 local cmp = require("cmp")

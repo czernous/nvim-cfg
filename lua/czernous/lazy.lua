@@ -10,6 +10,7 @@ if not vim.loop.fs_stat(lazypath) then
   })
 end
 vim.opt.rtp:prepend(lazypath)
+
 require('lazy').setup('czernous.plugins')
 require('czernous.cfg')
 -- vim.cmd(":TSUpdate") -- sometimes TS does not start for some reason
