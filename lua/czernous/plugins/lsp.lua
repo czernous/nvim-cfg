@@ -1,6 +1,4 @@
-
 return {
-
     {
         "neovim/nvim-lspconfig",
         -- event = "LazyFile",
@@ -16,7 +14,6 @@ return {
 
             -- Additional lua configuration, makes nvim stuff amazing!
             'folke/neodev.nvim',
-            
         },
       }
 }
