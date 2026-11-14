@@ -21,8 +21,10 @@ M.servers = {
   vtsls = 'vtsls',
 }
 
---- Names of servers enabled at startup (filled by M.setup).
+--- Names of servers found and enabled (filled shortly after startup).
 M.enabled = {}
+--- True once the background lookup has finished.
+M.ready = false
 
 function M.setup()
   vim.api.nvim_create_autocmd('LspAttach', {
@@ -39,14 +41,35 @@ function M.setup()
   -- nvim-cmp completion capabilities for every server.
   vim.lsp.config('*', { capabilities = require('cmp_nvim_lsp').default_capabilities() })
 
-  M.enabled = {}
-  for name, exe in pairs(M.servers) do
-    if vim.fn.executable(exe) == 1 then
-      vim.lsp.enable(name)
-      table.insert(M.enabled, name)
-    end
-  end
-  table.sort(M.enabled)
+  -- Find which server programs exist WITHOUT blocking startup: on machines
+  -- whose $PATH has slow entries (network or Windows mounts) every miss costs
+  -- ~100ms. A background shell does the lookups; found servers are then
+  -- enabled, and attach to any buffers already open.
+  local names, exes = {}, {}
+  for name, exe in pairs(M.servers) do names[#names + 1] = name; exes[#exes + 1] = exe end
+  local script = 'for e in "$@"; do command -v "$e" >/dev/null 2>&1 && echo "$e"; done'
+  vim.system(vim.list_extend({ 'sh', '-c', script, 'sh' }, exes), { text = true }, function(r)
+    vim.schedule(function()
+      local found = {}
+      for line in (r.stdout or ''):gmatch('[^\n]+') do found[line] = true end
+      M.enabled = {}
+      for i, name in ipairs(names) do
+        if found[exes[i]] then table.insert(M.enabled, name) end
+      end
+      table.sort(M.enabled)
+      local function enable()
+        if #M.enabled > 0 then vim.lsp.enable(M.enabled) end
+        M.ready = true
+      end
+      -- Neovim only attaches already-open buffers once startup has finished,
+      -- so if we got here early (something waited during startup), wait for it.
+      if vim.v.vim_did_enter == 1 then
+        enable()
+      else
+        vim.api.nvim_create_autocmd('VimEnter', { once = true, callback = enable })
+      end
+    end)
+  end)
 end
 
 return M

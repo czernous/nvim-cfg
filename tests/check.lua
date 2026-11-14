@@ -31,6 +31,13 @@ vim.keymap.set = function(mode, lhs, rhs, opts)
   return orig_set(mode, lhs, rhs, opts)
 end
 
+check.startup_lookups = {}
+local orig_executable = vim.fn.executable
+vim.fn.executable = function(name)
+  if vim.v.vim_did_enter == 0 then table.insert(check.startup_lookups, name) end
+  return orig_executable(name)
+end
+
 local orig_notify = vim.notify
 vim.notify = function(msg, level, o)
   if level and level >= vim.log.levels.ERROR then
@@ -196,6 +203,34 @@ check.global('mason_is_fallback_only', function()
   return idx == #parts, ('mason bin at PATH position %d of %d (want last)'):format(idx, #parts)
 end)
 
+-- Startup must not search $PATH for servers: each miss can cost ~100ms when
+-- $PATH has slow entries (network/Windows mounts). Lookups run in the background.
+check.global('no_startup_path_lookups', function()
+  local servers = {}
+  for _, exe in pairs(require('czernous.lsp').servers) do servers[exe] = true end
+  local bad = vim.tbl_filter(function(n) return servers[n] end, check.startup_lookups)
+  return #bad == 0, 'looked up during startup: ' .. table.concat(bad, ', ')
+end)
+
+-- `nvim file.lua` (file opened before startup finishes) must still get LSP.
+check.global('direct_open_attaches', function()
+  if vim.fn.executable('lua-language-server') == 0 then return true end
+  local probe = vim.fn.tempname() .. '.lua'
+  vim.fn.writefile({
+    "vim.api.nvim_create_autocmd('VimEnter', { callback = function() vim.defer_fn(function()",
+    "  vim.wait(20000, function() return #vim.lsp.get_clients({ bufnr = 0 }) > 0 end, 100)",
+    "  io.stdout:write('ATTACHED=' .. #vim.lsp.get_clients({ bufnr = 0 }) .. '\\n'); vim.cmd('qa!')",
+    "end, 10) end })",
+  }, probe)
+  -- Minimal PATH so the background lookup finishes BEFORE startup does (the race).
+  local nvim_dir = vim.fn.fnamemodify(vim.v.progpath, ':h')
+  local env = { PATH = nvim_dir .. ':/usr/bin:/bin' }
+  -- `-c vim.wait` = something processing events during startup (e.g. a plugin waiting).
+  local r = vim.system({ vim.v.progpath, '--headless', '--cmd', 'luafile ' .. probe, '-c', 'lua vim.wait(2000)', fixtures .. '/lua/init.lua' },
+    { text = true, env = env }):wait(40000)
+  return (r.stdout or ''):find('ATTACHED=[1-9]') ~= nil, 'child output: ' .. vim.trim((r.stdout or '') .. (r.stderr or ''))
+end)
+
 check.global('enabled_matches_path', function()
   local ok, lsp = pcall(require, 'czernous.lsp')
   if not ok or type(lsp) ~= 'table' or not lsp.servers or not lsp.enabled then return false, 'czernous.lsp has no servers/enabled' end
@@ -203,6 +238,7 @@ check.global('enabled_matches_path', function()
   for name, exe in pairs(lsp.servers) do
     if vim.fn.executable(exe) == 1 then want[#want + 1] = name end
   end
+  vim.wait(10000, function() return lsp.ready end, 50)
   for _, name in ipairs(lsp.enabled) do got[#got + 1] = name end
   table.sort(want); table.sort(got)
   return vim.deep_equal(want, got), ('want %s got %s'):format(vim.inspect(want), vim.inspect(got))
