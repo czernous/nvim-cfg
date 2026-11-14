@@ -12,7 +12,7 @@ local M = {}
 
 -- Which keys to show (by the keys you press), in this order. Their descriptions
 -- are looked up in keymaps.lua.
-local shown = { '<leader>pf', '<leader>pg', '<leader>?', '<leader>pv', '<C-e>', '<leader>gs' }
+local shown = { '<leader>pf', '<leader>pg', '<leader>?', '<leader>pv', '<C-e>', '<leader>ee', '<leader>gs', '<leader>pk' }
 
 local function key_lines()
   local desc = {}

@@ -648,7 +648,7 @@ end)
 
 check.global('special_buffers_are_quiet', function()
   local before = #check.errors
-  for _, cmd in ipairs({ 'help help', 'Ex', 'terminal', 'enew' }) do
+  for _, cmd in ipairs({ 'help help', 'Oil', 'terminal', 'enew' }) do
     vim.cmd('silent! %bwipeout!')
     local ok, err = pcall(vim.cmd, cmd)
     if not ok then return false, cmd .. ': ' .. tostring(err) end
@@ -1165,7 +1165,7 @@ end)
 
 check.global('statusline_special_buffers', function()
   local before = #check.errors
-  for _, cmd in ipairs({ 'help help', 'Ex', 'terminal', 'enew' }) do
+  for _, cmd in ipairs({ 'help help', 'Oil', 'terminal', 'enew' }) do
     vim.cmd('silent! %bwipeout!')
     local ok, err = pcall(vim.cmd, cmd)
     if not ok then return false, cmd .. ': ' .. tostring(err) end
@@ -1379,6 +1379,110 @@ end)
 check.global('formatter_plugins', function()
   local lock = table.concat(vim.fn.readfile(root .. '/lazy-lock.json'), '\n')
   return lock:find('"conform.nvim"', 1, true) ~= nil and not lock:find('"neoformat"', 1, true), 'want conform.nvim in the lockfile and neoformat gone'
+end)
+
+---------------------------------------------------------------------------
+-- Stage 2a clean-up: replaced plugins gone, built-ins used, options, keys
+---------------------------------------------------------------------------
+local function has_key(mode, lhs)
+  for _, k in ipairs(require('czernous.keymaps').all()) do
+    if k.mode == mode and k.lhs == lhs then return k end
+  end
+end
+
+check.global('dropped_plugins_gone', function()
+  local lock = table.concat(vim.fn.readfile(root .. '/lazy-lock.json'), '\n')
+  local bad = {}
+  for _, name in ipairs({ 'telescope-fzf-native.nvim', 'vim-rhubarb', 'undotree', 'trouble.nvim', 'nvim-web-devicons', 'neoformat', 'lualine.nvim' }) do
+    if lock:find('"' .. name .. '"', 1, true) then bad[#bad + 1] = name end
+  end
+  if not lock:find('"oil.nvim"', 1, true) then bad[#bad + 1] = 'oil.nvim missing' end
+  if vim.uv.fs_stat(root .. '/lua/czernous/incremental_selection.lua') then bad[#bad + 1] = 'incremental_selection.lua still exists' end
+  return #bad == 0, table.concat(bad, ', ')
+end)
+
+check.global('options_set', function()
+  local want = { undofile = true, ignorecase = true, smartcase = true, scrolloff = 8, splitright = true, splitbelow = true,
+    inccommand = 'split', cursorline = true, confirm = true, smartindent = false }
+  local bad = {}
+  for name, value in pairs(want) do
+    -- the global value: what every new window gets
+    if vim.go[name] ~= value then bad[#bad + 1] = ('%s=%s'):format(name, tostring(vim.go[name])) end
+  end
+  if vim.o.guicursor == '' then bad[#bad + 1] = 'guicursor is empty (block cursor in every mode)' end
+  return #bad == 0, table.concat(bad, ', ')
+end)
+
+check.global('explorer_is_oil', function()
+  if vim.fn.exists(':Explore') == 2 then return false, 'the built-in explorer (netrw) is still loaded' end
+  local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p'); vim.fn.writefile({ 'x' }, dir .. '/a.txt')
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/a.txt')
+  vim.api.nvim_feedkeys(vim.keycode('<leader>pv'), 'x', false)
+  vim.wait(2000, function() return vim.bo.filetype == 'oil' end, 50)
+  local ft = vim.bo.filetype
+  vim.wait(500)
+  local listing = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '|')
+  vim.cmd('silent! %bwipeout!')
+  -- plain names only: no icon column (font independence)
+  return ft == 'oil' and listing:find('a.txt', 1, true) ~= nil and not listing:find('[\128-\255]'), ('filetype=%s listing=%s'):format(ft, listing:sub(1, 80))
+end)
+
+check.global('builtin_undotree_key', function()
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua')
+  local wins = #vim.api.nvim_list_wins()
+  local ok, err = pcall(vim.api.nvim_feedkeys, vim.keycode('<leader>u'), 'x', false)
+  vim.wait(500)
+  local opened = #vim.api.nvim_list_wins() > wins
+  vim.cmd('silent! only')
+  return ok and opened, ('ok=%s opened a window=%s %s'):format(tostring(ok), tostring(opened), tostring(err or ''))
+end)
+
+check.global('clipboard_keys_in_visual', function()
+  local bad = {}
+  for _, lhs in ipairs({ '<leader>y', '<leader>d' }) do
+    if not has_key('x', lhs) and not has_key('v', lhs) then bad[#bad + 1] = lhs .. ' missing in visual mode' end
+    if not has_key('n', lhs) then bad[#bad + 1] = lhs .. ' missing in normal mode' end
+  end
+  return #bad == 0, table.concat(bad, ', ')
+end)
+
+check.global('removed_keys_gone', function()
+  local bad = {}
+  for _, k in ipairs({ { 'n', 'Y' }, { 'n', '<C-k>' }, { 'n', '<C-j>' }, { 'n', '<leader>k' }, { 'n', '<leader>j' }, { 'n', '<leader>vd' },
+    { 'n', '[d' }, { 'n', ']d' }, { 'n', '<leader>wa' }, { 'n', '<leader>wr' }, { 'n', '<leader>wl' }, { 'n', '<leader>ttx' },
+    { 'n', '<leader>ttq' }, { 'n', 'gI' }, { 'n', '<leader>D' }, { 'i', '<C-h>' } }) do
+    if has_key(k[1], k[2]) then bad[#bad + 1] = k[1] .. ' ' .. k[2] end
+  end
+  return #bad == 0, 'still defined: ' .. table.concat(bad, ', ')
+end)
+
+-- Problems: see them, move between them, fix them -- obvious keys, no jargon.
+check.global('problems_keys', function()
+  local bad = {}
+  for _, lhs in ipairs({ '<leader>ee', '<leader>ea', '<leader>ef', '<leader>en', '<leader>ep' }) do
+    if not has_key('n', lhs) then bad[#bad + 1] = lhs .. ' missing' end
+  end
+  -- jumping to a problem shows its message in a popup (built-in ]d too)
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua')
+  local ns = vim.api.nvim_create_namespace('czcheck_prob')
+  vim.diagnostic.set(ns, 0, { { lnum = 4, col = 0, message = 'injected problem', severity = vim.diagnostic.severity.ERROR } })
+  for _, keys in ipairs({ '<leader>en', ']d' }) do
+    vim.cmd('silent! only'); vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    local wins = #vim.api.nvim_list_wins()
+    vim.api.nvim_feedkeys(vim.keycode(keys), 'x', false)
+    vim.wait(300)
+    if vim.api.nvim_win_get_cursor(0)[1] ~= 5 or #vim.api.nvim_list_wins() <= wins then bad[#bad + 1] = keys .. ' did not jump and show the message' end
+  end
+  vim.diagnostic.reset(ns, 0); vim.cmd('silent! only')
+  return #bad == 0, table.concat(bad, ', ')
+end)
+
+check.global('find_helper_keys', function()
+  local bad = {}
+  for _, lhs in ipairs({ '<leader>pk', '<leader>pr', '<leader>pw' }) do
+    if not has_key('n', lhs) then bad[#bad + 1] = lhs .. ' missing' end
+  end
+  return #bad == 0, table.concat(bad, ', ')
 end)
 
 check.global('no_cfg_dir', function()

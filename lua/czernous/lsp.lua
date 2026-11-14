@@ -39,6 +39,10 @@ function M.setup()
     virtual_text = false,
     severity_sort = true,
     float = { border = 'rounded', source = true },
+    -- after jumping to a problem (]d, [d, <leader>en/ep) show its message
+    jump = {
+      on_jump = function(_, bufnr) vim.diagnostic.open_float({ bufnr = bufnr, scope = 'cursor', focus = false }) end,
+    },
   })
 
   vim.api.nvim_create_autocmd('LspAttach', {

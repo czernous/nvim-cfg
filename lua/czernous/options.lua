@@ -1,6 +1,5 @@
 vim.g.mapleader = " " -- Space is the <leader> key (must be set before plugins load)
 
-vim.opt.guicursor = ""
 vim.opt.nu = true
 vim.opt.relativenumber = true
 
@@ -9,7 +8,6 @@ vim.opt.softtabstop = 4
 vim.opt.shiftwidth = 4
 vim.opt.expandtab = true
 
-vim.opt.smartindent = true
 
 
 -- Always show the sign column, so git markers appearing doesn't shift the text.
@@ -22,5 +20,16 @@ vim.opt.winborder = 'rounded'
 -- No `~` markers on the empty lines after the end of a file.
 vim.opt.fillchars:append({ eob = ' ' })
 
--- The built-in file explorer (<leader>pv) without its help banner on top.
-vim.g.netrw_banner = 0
+-- The built-in file explorer (netrw) is not used: <leader>pv opens oil.nvim.
+vim.g.loaded_netrwPlugin = 1
+vim.g.loaded_netrw = 1
+
+vim.opt.undofile = true        -- undo history survives closing the file
+vim.opt.ignorecase = true      -- searching ignores case...
+vim.opt.smartcase = true       -- ...unless you type a capital letter
+vim.opt.scrolloff = 8          -- keep 8 lines of context around the cursor
+vim.opt.splitright = true      -- new side-by-side windows open on the right
+vim.opt.splitbelow = true      -- new stacked windows open below
+vim.opt.inccommand = 'split'   -- :s/old/new/ shows a live preview while you type
+vim.opt.cursorline = true      -- faint highlight on the line the cursor is on
+vim.opt.confirm = true         -- ask "save changes?" instead of refusing to quit

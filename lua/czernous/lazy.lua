@@ -27,7 +27,7 @@ require('lazy').setup('czernous.plugins', {
   performance = {
     rtp = {
       -- Built-in plugins this config never uses.
-      disabled_plugins = { 'gzip', 'tarPlugin', 'tohtml', 'tutor', 'zipPlugin', 'rplugin', 'spellfile', 'osc52' },
+      disabled_plugins = { 'gzip', 'tarPlugin', 'tohtml', 'tutor', 'zipPlugin', 'rplugin', 'spellfile', 'osc52', 'netrwPlugin' },
     },
   },
 })

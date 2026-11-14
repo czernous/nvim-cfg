@@ -6,17 +6,7 @@ return {
     -- required for compatibility with nvim-treesitter main.
     branch = 'master',
     cmd = 'Telescope', -- also loads on the first search key (keymaps.lua)
-    dependencies = {
-      'nvim-lua/plenary.nvim',
-      {
-        -- Native fuzzy sorter; needs `make` and a C compiler at install time.
-        -- (No `cond = executable('make')`: a PATH lookup on every startup costs
-        -- ~100ms on slow PATHs. Without make the build fails once, at install,
-        -- and Telescope falls back to its Lua sorter.)
-        'nvim-telescope/telescope-fzf-native.nvim',
-        build = 'make',
-      },
-    },
+    dependencies = { 'nvim-lua/plenary.nvim' },
     config = function()
       local telescope = require('telescope')
       telescope.setup({
@@ -31,7 +21,6 @@ return {
           },
         },
       })
-      pcall(telescope.load_extension, 'fzf')
     end,
   },
 }
