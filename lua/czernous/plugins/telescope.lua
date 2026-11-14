@@ -1,7 +1,9 @@
 return {
     {
         'nvim-telescope/telescope.nvim',
-        branch = '0.1.x',
+        -- master (not the frozen 0.1.x) -- its previewer uses core treesitter
+        -- (vim.treesitter.*), required for compatibility with nvim-treesitter main.
+        branch = 'master',
         dependencies = {
           'nvim-lua/plenary.nvim',
           -- Fuzzy Finder Algorithm which requires local dependencies to be built.

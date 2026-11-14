@@ -1,5 +1,31 @@
 --theprimeagen/asbjornhaland remaps
-vim.g.mapleader = " "
+
+-- ============================================================================
+-- Keymap notation cheat-sheet (how to read the mappings in this config)
+-- ----------------------------------------------------------------------------
+-- Modifiers (inside < >), meaning "hold this and press the next key":
+--   <C-x>      Ctrl + x        (C = Control)
+--   <M-x>      Alt + x         (M = Meta; on most keyboards this is the Alt key)
+--   <S-x>      Shift + x       (S = Shift)
+--   <leader>   the "leader" key -- set to Space just below (mapleader = " ").
+--              So <leader>a means: tap Space, then a. It's a personal prefix
+--              used to namespace custom shortcuts so they don't clash.
+--
+-- Special keys:
+--   <CR>       Enter/Return          <BS>    Backspace
+--   <Esc>      Escape                <Tab>   Tab
+--   <space>    the Space bar         <Nop>   "do nothing" (disable a key)
+--   <C-space>  Ctrl + Space          <M-space> Alt + Space
+--
+-- The first argument to vim.keymap.set is the MODE the mapping applies in:
+--   "n" normal   "i" insert   "v"/"x" visual   "o" operator-pending
+--   "s" select   { "n", "v" } means it applies in several modes at once.
+--
+-- Tip: run `:map <key>` to see what any key does, or press <leader> and wait
+-- for the which-key popup to list what follows it.
+-- ============================================================================
+
+vim.g.mapleader = " " -- Space is the <leader> key referenced throughout this config
 vim.keymap.set("v", "J", ":m '>+1<CR>gv=gv") -- move lines up/down when highlighted
 vim.keymap.set("v", "K", ":m '<-2<CR>gv=gv")
 
@@ -36,7 +62,7 @@ vim.keymap.set("n", "<C-j>", "<cmd>cprev<CR>zz")
 vim.keymap.set("n", "<leader>k", "<cmd>lnext<CR>zz")
 vim.keymap.set("n", "<leader>j", "<cmd>lprev<CR>zz")
 
-vim.keymap.set("n", "<leader>s", ":%s/\\<<C-r><C-w>\\>/<C-r><C-w>/gI<Left><Left><Left>]]")
+vim.keymap.set("n", "<leader>s", ":%s/\\<<C-r><C-w>\\>/<C-r><C-w>/gI<Left><Left><Left>")
 vim.keymap.set("n", "<leader>x", "<cmd>!chmod +x %<CR>")
 
 vim.keymap.set("n", "<leader><leader>", function()
@@ -55,7 +81,8 @@ vim.keymap.set('n', 'k', "v:count == 0 ? 'gk' : 'k'", { expr = true, silent = tr
 vim.keymap.set('n', 'j', "v:count == 0 ? 'gj' : 'j'", { expr = true, silent = true })
 
 -- Diagnostic keymaps
-vim.keymap.set('n', '[d', vim.diagnostic.goto_prev, { desc = 'Go to previous diagnostic message' })
-vim.keymap.set('n', ']d', vim.diagnostic.goto_next, { desc = 'Go to next diagnostic message' })
+-- goto_prev/goto_next are deprecated; vim.diagnostic.jump is the current API.
+vim.keymap.set('n', '[d', function() vim.diagnostic.jump({ count = -1, float = true }) end, { desc = 'Go to previous diagnostic message' })
+vim.keymap.set('n', ']d', function() vim.diagnostic.jump({ count = 1, float = true }) end, { desc = 'Go to next diagnostic message' })
 vim.keymap.set('n', '<leader>vd', vim.diagnostic.open_float, { desc = '[V]iew [d]iagnostic message' })
 vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostics list' })

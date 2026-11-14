@@ -2,13 +2,9 @@ return {
   {
     'sbdchd/neoformat'
   },
-  {
-    'numToStr/Comment.nvim',
-    config = function()
-      require('Comment').setup()
-    end
-  },
-  { 'folke/which-key.nvim', opts = {} },
+  -- Comment.nvim removed: Neovim 0.10+ has built-in commenting.
+  --   gcc = toggle line, gbc = toggle block, gc{motion}/gc (visual) = toggle range,
+  --   gcO/gco/gcA = add comment above/below/end-of-line. Uses 'commentstring'.
   'tpope/vim-rhubarb',
 
   -- Detect tabstop and shiftwidth automatically
@@ -40,7 +36,7 @@ return {
             return ']c'
           end
           vim.schedule(function()
-            gs.next_hunk()
+            gs.nav_hunk('next')
           end)
           return '<Ignore>'
         end, { expr = true, desc = 'Jump to next hunk' })
@@ -50,7 +46,7 @@ return {
             return '[c'
           end
           vim.schedule(function()
-            gs.prev_hunk()
+            gs.nav_hunk('prev')
           end)
           return '<Ignore>'
         end, { expr = true, desc = 'Jump to previous hunk' })
@@ -67,7 +63,8 @@ return {
         map('n', '<leader>hs', gs.stage_hunk, { desc = 'git stage hunk' })
         map('n', '<leader>hr', gs.reset_hunk, { desc = 'git reset hunk' })
         map('n', '<leader>hS', gs.stage_buffer, { desc = 'git Stage buffer' })
-        map('n', '<leader>hu', gs.undo_stage_hunk, { desc = 'undo stage hunk' })
+        -- undo_stage_hunk is deprecated: stage_hunk on an already-staged hunk unstages it.
+        map('n', '<leader>hu', gs.stage_hunk, { desc = 'toggle stage hunk' })
         map('n', '<leader>hR', gs.reset_buffer, { desc = 'git Reset buffer' })
         map('n', '<leader>hp', gs.preview_hunk, { desc = 'preview git hunk' })
         map('n', '<leader>hb', function()
@@ -80,7 +77,7 @@ return {
 
         -- Toggles
         map('n', '<leader>tb', gs.toggle_current_line_blame, { desc = 'toggle git blame line' })
-        map('n', '<leader>td', gs.toggle_deleted, { desc = 'toggle git show deleted' })
+        map('n', '<leader>td', gs.preview_hunk_inline, { desc = 'git preview hunk inline (shows deleted)' })
 
         -- Text object
         map({ 'o', 'x' }, 'ih', ':<C-U>Gitsigns select_hunk<CR>', { desc = 'select git hunk' })

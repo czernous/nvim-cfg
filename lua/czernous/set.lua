@@ -10,5 +10,6 @@ vim.opt.expandtab = true
 vim.opt.smartindent = true
 
 
-vim.diagnostic.signs = false
+-- Disable diagnostic gutter signs (correct API; `vim.diagnostic.signs = false` was a no-op).
+vim.diagnostic.config({ signs = false })
 
