@@ -33,3 +33,4 @@ vim.opt.splitbelow = true      -- new stacked windows open below
 vim.opt.inccommand = 'split'   -- :s/old/new/ shows a live preview while you type
 vim.opt.cursorline = true      -- faint highlight on the line the cursor is on
 vim.opt.confirm = true         -- ask "save changes?" instead of refusing to quit
+vim.opt.updatetime = 300       -- "the cursor has rested" after 0.3 s (used for the statusline's `fix` hint)

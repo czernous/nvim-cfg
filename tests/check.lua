@@ -1487,8 +1487,8 @@ end)
 check.global('removed_keys_gone', function()
   local bad = {}
   for _, k in ipairs({ { 'n', 'Y' }, { 'n', '<C-k>' }, { 'n', '<C-j>' }, { 'n', '<leader>k' }, { 'n', '<leader>j' }, { 'n', '<leader>vd' },
-    { 'n', '[d' }, { 'n', ']d' }, { 'n', '<leader>wa' }, { 'n', '<leader>wr' }, { 'n', '<leader>wl' }, { 'n', '<leader>ttx' },
-    { 'n', '<leader>ttq' }, { 'n', 'gI' }, { 'n', '<leader>D' }, { 'i', '<C-h>' } }) do
+    { 'n', '[d' }, { 'n', ']d' }, { 'n', '<leader>wa' }, { 'n', '<leader>wr' }, { 'n', '<leader>wl' },
+    { 'n', 'gI' }, { 'n', '<leader>D' }, { 'i', '<C-h>' } }) do
     if has_key(k[1], k[2]) then bad[#bad + 1] = k[1] .. ' ' .. k[2] end
   end
   return #bad == 0, 'still defined: ' .. table.concat(bad, ', ')
@@ -1636,6 +1636,83 @@ check.global('startup_extras_deferred', function()
   local out = (r.stdout or '') .. (r.stderr or '')
   -- extended % matching loads with the first file, not before
   return out:find('matchit_at_start=nil matchit_with_file=1') ~= nil, out:sub(1, 160)
+end)
+
+---------------------------------------------------------------------------
+-- Stage 2b: errors & fixes
+---------------------------------------------------------------------------
+-- Nothing added in stage 2b may load before its feature is first used.
+check.global('stage2b_plugins_load_on_use_only', function()
+  local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+    "autocmd VimEnter * ++once lua vim.defer_fn(function() vim.cmd.edit('tests/fixtures/go/main.go') vim.defer_fn(function() local l = {} for name, p in pairs(require('lazy.core.config').plugins) do if p._.loaded then l[#l + 1] = name end end table.sort(l) io.stdout:write('LOADED=' .. table.concat(l, ',')) vim.cmd('qa!') end, 1500) end, 100)" },
+    { text = true, cwd = root }):wait(30000)
+  local loaded = ((r.stdout or '') .. (r.stderr or '')):match('LOADED=([^\n]*)') or ''
+  local bad = {}
+  for _, name in ipairs({ 'nvim-dap', 'actions-preview.nvim', 'telescope.nvim', 'oil.nvim', 'conform.nvim' }) do
+    if (',' .. loaded .. ','):find(',' .. name .. ',', 1, true) then bad[#bad + 1] = name end
+  end
+  return #bad == 0 and loaded ~= '', ('loaded just by opening a file: %s (all loaded: %s)'):format(table.concat(bad, ', '), loaded)
+end)
+
+-- The statusline says `fix` when the language server offers a fix on the cursor's line.
+check.global('fix_available_shown_in_statusline', function()
+  if vim.fn.executable('lua-language-server') == 0 then return 'skip', 'lua-language-server not on PATH' end
+  -- a project root (.git) so lua_ls analyses it as a workspace: it reports nothing
+  -- for a lone file outside any project within this check's patience
+  local dir = vim.fn.tempname(); vim.fn.mkdir(dir .. '/.git', 'p')
+  vim.fn.writefile({ 'local a = 1', 'undefined_thing_xyz()', 'return a' }, dir .. '/f.lua')
+  vim.o.columns = 140
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/f.lua')
+  local buf = vim.api.nvim_get_current_buf()
+  vim.wait(20000, function() return #vim.diagnostic.get(buf, { lnum = 1 }) > 0 end, 100)
+  if #vim.diagnostic.get(buf, { lnum = 1 }) == 0 then return false, 'no diagnostic appeared on the test line' end
+  local function line_after_rest(lnum)
+    vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+    vim.api.nvim_exec_autocmds('CursorHold', { buffer = buf, modeline = false })
+    vim.wait(3000, function() return (lnum == 2) == (rendered_statusline():find(' fix', 1, true) ~= nil) end, 50)
+    return rendered_statusline()
+  end
+  local on_problem = line_after_rest(2)
+  local elsewhere = line_after_rest(1)
+  return on_problem:find(' fix', 1, true) ~= nil and elsewhere:find(' fix', 1, true) == nil,
+    ('on the problem line: [%s] | on a clean line: [%s]'):format(on_problem:sub(1, 90), elsewhere:sub(1, 90))
+end)
+
+check.global('fixes_are_previewed', function()
+  local lock = table.concat(vim.fn.readfile(root .. '/lazy-lock.json'), '\n')
+  if not lock:find('"actions-preview.nvim"', 1, true) then return false, 'actions-preview.nvim not installed' end
+  local keys = require('czernous.keymaps')
+  if not keys.fixes then return false, 'keymaps has no fixes() entry point' end
+  -- the fix keys all go through the previewing picker
+  local called = 0
+  local ok, ap = pcall(require, 'actions-preview')
+  if not ok then return false, 'actions-preview cannot be loaded' end
+  local real = ap.code_actions
+  ap.code_actions = function() called = called + 1 end
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua')
+  vim.wait(8000, function() return #vim.lsp.get_clients({ bufnr = 0 }) > 0 end, 100)
+  for _, k in ipairs({ '<leader>ef', '<leader>ttq', '<leader>ca', 'gra' }) do vim.api.nvim_feedkeys(vim.keycode(k), 'x', false) end
+  ap.code_actions = real
+  return called == 4, ('%d of 4 fix keys (<leader>ef, <leader>ttq, <leader>ca, gra) opened the preview'):format(called)
+end)
+
+check.global('trouble_style_keys_are_aliases', function()
+  local bad = {}
+  for _, lhs in ipairs({ '<leader>ttx', '<leader>ttd', '<leader>ttq', '<leader>ttr' }) do
+    if not has_key('n', lhs) then bad[#bad + 1] = lhs end
+  end
+  local lock = table.concat(vim.fn.readfile(root .. '/lazy-lock.json'), '\n')
+  if lock:find('"trouble.nvim"', 1, true) then bad[#bad + 1] = 'trouble.nvim is installed' end
+  return #bad == 0, 'missing: ' .. table.concat(bad, ', ')
+end)
+
+check.global('lint_servers_known', function()
+  local servers = require('czernous.lsp').servers
+  local bad = {}
+  for _, name in ipairs({ 'biome', 'ruff' }) do if not servers[name] then bad[#bad + 1] = name end end
+  local gopls = vim.tbl_get(vim.lsp.config.gopls or {}, 'settings', 'gopls', 'staticcheck')
+  if gopls ~= true then bad[#bad + 1] = 'gopls staticcheck' end
+  return #bad == 0, 'not configured: ' .. table.concat(bad, ', ')
 end)
 
 check.global('no_cfg_dir', function()

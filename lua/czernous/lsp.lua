@@ -21,6 +21,10 @@ M.servers = {
   csharp_ls = 'csharp-ls',
   vtsls = 'vtsls',
   kotlin_language_server = 'kotlin-language-server', -- .kt and Gradle .kts files
+  -- Linters that speak the language-server protocol: they REPORT style, format
+  -- and lint violations as warnings/hints in the editor (nothing is auto-fixed).
+  biome = 'biome', -- JS / TS / JSON / CSS (the project's Biome config decides)
+  ruff = 'ruff',   -- Python
 }
 
 --- Names of servers found and enabled (filled shortly after startup).
@@ -76,6 +80,7 @@ function M.setup()
   -- both must be in place before servers are looked up and enabled.
   vim.api.nvim_exec_autocmds('User', { pattern = 'CzernousLspSetup', modeline = false })
   M.refresh()
+  require('czernous.fixes').setup() -- the statusline's `fix` hint
 
   -- A server installed with :MasonInstall should start without restarting
   -- Neovim. Mason's registry is only loaded once its window opens (so it costs

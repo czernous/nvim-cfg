@@ -20,7 +20,7 @@
 -- every key by what it does.
 --
 -- BUILT-IN (no configuration, work in any Neovim 0.12):
---   grn rename          gra code action (fixes)   grr references   gri implementation
+--   grn rename          gra fixes (with preview)  grr references   gri implementation
 --   grt type definition gO  outline of the file   ]d [d next/previous problem
 --   ]q [q next/previous quickfix item             ]b [b next/previous buffer
 --   gcc comment line    gc{motion} comment        <C-w>d problem under cursor
@@ -98,7 +98,12 @@ M.groups = {
       { 'n', '<leader>ea', telescope('diagnostics'), desc = 'Problems in all open files (list)' },
       { 'n', '<leader>en', function() vim.diagnostic.jump({ count = 1 }) end, desc = 'Next problem (same as ]d)' },
       { 'n', '<leader>ep', function() vim.diagnostic.jump({ count = -1 }) end, desc = 'Previous problem (same as [d)' },
-      { { 'n', 'x' }, '<leader>ef', function() vim.lsp.buf.code_action() end, desc = 'Fix: show the fixes offered here (same as gra)' },
+      { { 'n', 'x' }, '<leader>ef', function() M.fixes() end, desc = 'Fix: list the fixes offered here, with a preview of each' },
+      -- The same lists under the keys Trouble used, for fingers that know them.
+      { 'n', '<leader>ttx', telescope('diagnostics'), desc = 'Problems in all open files (same as <leader>ea)' },
+      { 'n', '<leader>ttd', telescope('diagnostics', { bufnr = 0 }), desc = 'Problems in this file (same as <leader>ee)' },
+      { 'n', '<leader>ttq', function() M.fixes() end, desc = 'Fixes offered here (same as <leader>ef)' },
+      { 'n', '<leader>ttr', telescope('lsp_references'), desc = 'Where is this used? (same as grr)' },
       { 'n', '<leader>ed', function() vim.diagnostic.open_float() end, desc = 'Describe the problem under the cursor' },
       { 'n', '<leader>eq', function() vim.diagnostic.setqflist() end, desc = 'Send all problems to the quickfix list (]q / [q to step)' },
     },
@@ -200,7 +205,8 @@ M.groups = {
       { 'n', 'gO', telescope('lsp_document_symbols'), desc = 'Outline of this file' },
       { 'n', '<leader>ws', telescope('lsp_dynamic_workspace_symbols'), desc = 'Find a symbol in the whole project' },
       { 'n', '<leader>rn', function() vim.lsp.buf.rename() end, desc = 'Rename (same as grn)' },
-      { 'n', '<leader>ca', function() vim.lsp.buf.code_action() end, desc = 'Code action / fix (same as gra)' },
+      { { 'n', 'x' }, '<leader>ca', function() M.fixes() end, desc = 'Fixes / code actions here, with preview' },
+      { { 'n', 'x' }, 'gra', function() M.fixes() end, desc = 'Fixes / code actions here, with preview' },
     },
   },
   {
@@ -243,12 +249,16 @@ M.prefixes = {
   { '<leader>h', group = 'Git change' },
   { '<leader>h', group = 'Git change', mode = 'x' },
   { '<leader>g', group = 'Git' },
-  { '<leader>t', group = 'Toggle' },
+  { '<leader>t', group = 'Toggle / lists' },
+  { '<leader>tt', group = 'Lists: problems, fixes, uses' },
   { '<leader>c', group = 'Code' },
   { '<leader>r', group = 'Rename' },
   { '<leader>w', group = 'Whole project' },
   { 'gr', group = 'Language server (built-in)' },
 }
+
+--- Show the fixes (code actions) offered at the cursor, with a preview of each.
+function M.fixes() require('czernous.fixes').show() end
 
 local function set(key, extra)
   local opts = vim.tbl_extend('force', { desc = key.desc, expr = key.expr, remap = key.remap, silent = key.expr or nil }, extra or {})

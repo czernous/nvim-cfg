@@ -2,7 +2,8 @@
 --
 --   NORMAL  src/main.go [+]   git:main   E2 W1 H3                go   12:8
 --   mode    file  modified    branch     problems          filetype   line:column
---   (E errors, W warnings, I information, H hints -- only the ones present)
+--   (E errors, W warnings, I information, H hints -- only the ones present;
+--    `fix` after them when a fix is offered on the cursor's line: <leader>ef)
 --
 -- Built in, no plugin. Costs nothing while you move around: the mode, branch and
 -- problem counts are plain text written into the 'statusline' option only when
@@ -57,6 +58,11 @@ local function problems_part(buf)
     if n > 0 then out[#out + 1] = ('%%#%s#%s%d'):format(kind[3], kind[2], n) end
   end
   if #out == 0 then return '' end
+  -- `fix`: the language server offers a fix on the cursor's line (see fixes.lua)
+  local fix = vim.b[buf].czernous_fix
+  if fix and vim.api.nvim_get_current_buf() == buf and vim.api.nvim_win_get_cursor(0)[1] - 1 == fix then
+    out[#out + 1] = '%#CzStlHint#fix'
+  end
   return '   ' .. table.concat(out, ' ') .. '%#CzStlText#'
 end
 

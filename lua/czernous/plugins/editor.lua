@@ -29,6 +29,17 @@ return {
       },
     },
   },
+  {
+    -- Lists the fixes a language server offers and shows what each would change
+    -- before you apply it. Loads on the first fix key (<leader>ef, gra...).
+    'aznhe21/actions-preview.nvim',
+    dependencies = { 'nvim-telescope/telescope.nvim' },
+    opts = {
+      backend = { 'telescope' },
+      telescope = { sorting_strategy = 'ascending', layout_strategy = 'vertical',
+        layout_config = { width = 0.7, height = 0.8, prompt_position = 'top', preview_cutoff = 15, preview_height = function(_, _, max_lines) return max_lines - 12 end } },
+    },
+  },
   -- Detect tabstop and shiftwidth automatically when a file opens.
   { 'tpope/vim-sleuth', event = { 'BufReadPre', 'BufNewFile' } },
   {

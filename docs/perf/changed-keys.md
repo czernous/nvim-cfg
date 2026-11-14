@@ -9,7 +9,8 @@ Find any key from inside Neovim: `<leader>pk` (search keys by what they do), or 
 |---|---|
 | `<leader>ee` / `<leader>ea` | list the problems (errors, warnings, hints) in this file / in all open files |
 | `<leader>en` / `<leader>ep` | jump to the next / previous problem and show its message (same as `]d` / `[d`) |
-| `<leader>ef` | show the fixes offered at the cursor (same as `gra`) |
+| `<leader>ef` | list the fixes offered at the cursor, each with a preview of what it changes (also `gra`, `<leader>ca`). The statusline shows `fix` when the line under the cursor has one |
+| `<leader>ttx` / `<leader>ttd` / `<leader>ttq` / `<leader>ttr` | the keys Trouble used, kept as aliases: problems in all files / in this file / fixes here / where is this used |
 | `<leader>ed` | describe the problem under the cursor |
 | `<leader>eq` | send all problems to the quickfix list (`]q` / `[q` step through it) |
 | `<leader>F` | format with Spotless, exact (Gradle projects that use it) |
@@ -42,5 +43,5 @@ Find any key from inside Neovim: `<leader>pk` (search keys by what they do), or 
 | `<C-h>` in insert mode | `<C-s>` (argument help; it also appears by itself while typing a call) |
 | `Y` remap | nothing: Neovim's `Y` already copies to the end of the line |
 | `<leader>wa` / `<leader>wr` / `<leader>wl` (workspace folders) | rarely needed; `:lua vim.lsp.buf.add_workspace_folder()` etc. |
-| `<leader>tt…` (Trouble) | `<leader>e…` above |
+| Trouble (the plugin) | `<leader>e…` above; `<leader>ttx/ttd/ttq/ttr` still work as aliases |
 | `<leader>nf` (Neoformat) | `<leader>f` |
