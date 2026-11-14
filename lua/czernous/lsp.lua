@@ -2,7 +2,8 @@
 --
 -- A server starts only if its program is on $PATH: from the language's own
 -- toolchain (rustup, go install, dotnet tool) or a Nix devshell. Mason is a
--- manual fallback (:MasonInstall <name>); its bin dir is at the END of $PATH,
+-- manual fallback (:MasonInstall <name>, picked up without a restart); its bin
+-- dir is at the END of $PATH,
 -- so a toolchain/devshell copy always wins. Language/SDK versions are chosen by
 -- the environment you start Neovim in, never here.
 --
@@ -52,24 +53,44 @@ function M.setup()
     end,
   })
 
-  -- Find which server programs exist WITHOUT blocking startup: on machines
-  -- whose $PATH has slow entries (network or Windows mounts) every miss costs
-  -- ~100ms. A background shell does the lookups; found servers are then
-  -- enabled, and attach to any buffers already open.
+  M.refresh()
+
+  -- A server installed with :MasonInstall should start without restarting
+  -- Neovim. Mason's registry is only loaded once its window opens (so it costs
+  -- nothing at startup); from then on every finished install re-runs the lookup.
+  vim.api.nvim_create_autocmd('FileType', {
+    group = vim.api.nvim_create_augroup('czernous_lsp_mason', { clear = true }),
+    pattern = 'mason',
+    once = true,
+    callback = function()
+      require('mason-registry'):on('package:install:success', vim.schedule_wrap(M.refresh))
+    end,
+  })
+end
+
+--- Look for the programs of servers that aren't enabled yet and enable the ones
+--- found. Runs in a background shell: on machines whose $PATH has slow entries
+--- (network or Windows mounts) every miss costs ~100ms, so this never blocks.
+function M.refresh()
   local names, exes = {}, {}
-  for name, exe in pairs(M.servers) do names[#names + 1] = name; exes[#exes + 1] = exe end
+  for name, exe in pairs(M.servers) do
+    if not vim.tbl_contains(M.enabled, name) then names[#names + 1] = name; exes[#exes + 1] = exe end
+  end
+  if #names == 0 then M.ready = true; return end
   local script = 'for e in "$@"; do command -v "$e" >/dev/null 2>&1 && echo "$e"; done'
   vim.system(vim.list_extend({ 'sh', '-c', script, 'sh' }, exes), { text = true }, function(r)
     vim.schedule(function()
-      local found = {}
+      local found, new = {}, {}
       for line in (r.stdout or ''):gmatch('[^\n]+') do found[line] = true end
-      M.enabled = {}
       for i, name in ipairs(names) do
-        if found[exes[i]] then table.insert(M.enabled, name) end
+        if found[exes[i]] then new[#new + 1] = name end
       end
-      table.sort(M.enabled)
       local function enable()
-        if #M.enabled > 0 then vim.lsp.enable(M.enabled) end
+        if #new > 0 then
+          vim.lsp.enable(new)
+          vim.list_extend(M.enabled, new)
+          table.sort(M.enabled)
+        end
         M.ready = true
       end
       -- Neovim only attaches already-open buffers once startup has finished,

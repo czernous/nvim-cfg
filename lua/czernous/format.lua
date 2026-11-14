@@ -7,18 +7,47 @@
 
 local M = {}
 
+local function mentions_spotless(path)
+  if vim.fn.filereadable(path) ~= 1 then return false end
+  return table.concat(vim.fn.readfile(path), '\n'):find('spotless', 1, true) ~= nil
+end
+
+-- root -> boolean. Reading build files once per project per session is enough;
+-- restart Neovim after adding Spotless to a build.
+local uses_spotless = {}
+
+--- Does the Gradle build at `root` use Spotless? Looks where builds commonly
+--- declare it: the root build file, each module's build file, and shared build
+--- logic (buildSrc / build-logic convention plugins).
+local function detect_spotless(root)
+  for _, name in ipairs({ 'build.gradle.kts', 'build.gradle' }) do
+    if mentions_spotless(root .. '/' .. name) then return true end
+  end
+  for _, pattern in ipairs({
+    '*/build.gradle.kts', '*/build.gradle',
+    'buildSrc/**/*.kts', 'buildSrc/**/*.gradle', 'buildSrc/**/*.kt',
+    'build-logic/**/*.kts', 'build-logic/**/*.gradle', 'build-logic/**/*.kt',
+  }) do
+    for _, path in ipairs(vim.fn.globpath(root, pattern, false, true)) do
+      if mentions_spotless(path) then return true end
+    end
+  end
+  return false
+end
+
 --- Root of a Spotless-enabled Gradle project containing `buf`, or nil.
 local function spotless_root(buf)
   -- Only real files (not [No Name], :help, terminals...).
   if vim.bo[buf].buftype ~= '' or vim.api.nvim_buf_get_name(buf) == '' then return nil end
   local root = vim.fs.root(buf, { 'gradlew' })
   if not root then return nil end
-  for _, name in ipairs({ 'build.gradle.kts', 'build.gradle' }) do
-    local path = root .. '/' .. name
-    if vim.fn.filereadable(path) == 1 and table.concat(vim.fn.readfile(path), '\n'):find('spotless', 1, true) then
-      return root
-    end
+  if uses_spotless[root] == nil then uses_spotless[root] = detect_spotless(root) end
+  if not uses_spotless[root] then return nil end
+  if not vim.uv.fs_access(root .. '/gradlew', 'X') then
+    vim.notify(root .. '/gradlew is not executable (chmod +x gradlew); formatting without Spotless', vim.log.levels.WARN)
+    return nil
   end
+  return root
 end
 
 local function fallback(buf)

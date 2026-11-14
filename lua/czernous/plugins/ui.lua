@@ -15,7 +15,7 @@ return {
     dependencies = { 'nvim-tree/nvim-web-devicons' },
     opts = {
       options = {
-        theme = 'onedark',
+        theme = 'auto', -- follow whatever theme.lua applies
         component_separators = '|',
         section_separators = '',
       },

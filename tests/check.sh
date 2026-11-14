@@ -11,7 +11,8 @@ cd "$(dirname "$0")/.." || exit 1
 if [ "$1" = "--tripwires" ]; then
   failed=0
   for pair in blocking:no_blocking_calls global:no_global_writes reflection:no_reflection \
-              deprecated:no_deprecated_api leak:no_buffer_state_leaks; do
+              deprecated:no_deprecated_api leak:no_buffer_state_leaks \
+              whichkey:which_key_groups_used; do
     wire=${pair%%:*}; target=${pair##*:}
     out=$(CHECK_TRIPWIRE=$wire CHECK_ONLY="^$target\$" nvim --headless --cmd "luafile tests/check.lua" 2>&1)
     if printf '%s\n' "$out" | grep -q "^FAIL $target"; then

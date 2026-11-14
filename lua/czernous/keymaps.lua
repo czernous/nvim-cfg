@@ -219,8 +219,7 @@ M.groups = {
   },
 }
 
--- Labels shown by which-key for key prefixes. Only prefixes that actually have
--- keys are shown (see M.which_key).
+-- Labels shown by which-key for key prefixes.
 M.prefixes = {
   { '<leader>c', group = 'Code' },
   { '<leader>h', group = 'Git hunk' },
@@ -279,16 +278,9 @@ function M.lsp(bufnr) set_buffer_group('lsp', bufnr) end
 --- Buffer-local git hunk keys (called from gitsigns on_attach).
 function M.gitsigns(bufnr) set_buffer_group('gitsigns', bufnr) end
 
---- which-key `spec` with the prefixes that have at least one key.
-function M.which_key()
-  local all = M.all()
-  return vim.tbl_filter(function(p)
-    for _, k in ipairs(all) do
-      if k.lhs ~= p[1] and k.lhs:sub(1, #p[1]) == p[1] and (p.mode or 'n') == (k.mode == 'v' and 'v' or k.mode) then return true end
-    end
-    return false
-  end, M.prefixes)
-end
+--- which-key `spec`: the group labels above. (A check fails if a label's
+--- prefix has no keys, so this list can't go stale.)
+function M.which_key() return M.prefixes end
 
 --- Flat list of every key: { mode, lhs, desc, group }.
 function M.all()

@@ -181,6 +181,11 @@ check.global('no_prefix_clashes', function()
           local id = m .. ' ' .. mine .. ' < ' .. other.lhs
           if not seen[id] then seen[id] = true; bad[#bad + 1] = id end
         end
+        -- ...and the other way round: a live mapping that makes one of ours wait.
+        if other.mode == m and #other.lhs < #mine and mine:sub(1, #other.lhs) == other.lhs then
+          local id = m .. ' ' .. other.lhs .. ' < ' .. mine
+          if not seen[id] then seen[id] = true; bad[#bad + 1] = id end
+        end
       end
     end
   end
@@ -288,7 +293,7 @@ end)
 
 -- `nvim file.lua` (file opened before startup finishes) must still get LSP.
 check.global('direct_open_attaches', function()
-  if vim.fn.executable('lua-language-server') == 0 then return true end
+  if vim.fn.executable('lua-language-server') == 0 then return 'skip', 'lua-language-server not on PATH' end
   local probe = vim.fn.tempname() .. '.lua'
   vim.fn.writefile({
     "vim.api.nvim_create_autocmd('VimEnter', { callback = function() vim.defer_fn(function()",
@@ -371,7 +376,9 @@ check.global('rootless_file_is_quiet', function()
   vim.fn.writefile({ 'package main', '', 'func main() {}' }, dir .. '/x.go')
   local before = #check.errors
   vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/x.go')
+  local buf = vim.api.nvim_get_current_buf()
   vim.wait(5000)
+  if not vim.treesitter.highlighter.active[buf] then return false, 'no highlighting for a lone .go file' end
   local msgs = vim.api.nvim_exec2('messages', { output = true }).output
   local bad = #check.errors - before
   for line in msgs:gmatch('[^\n]+') do if line:match('^E%d+:') or line:match('^Error') then bad = bad + 1 end end
@@ -531,17 +538,20 @@ end)
 
 check.global('which_key_groups_used', function()
   local reg = require('czernous.keymaps')
-  if not reg.which_key then return false, 'keymaps.which_key() missing' end
-  local all = reg.all()
   local bad = {}
-  for _, g in ipairs(reg.which_key()) do
+  for _, p in ipairs(reg.prefixes or {}) do
     local used = false
-    for _, k in ipairs(all) do
-      if k.lhs ~= g[1] and k.lhs:sub(1, #g[1]) == g[1] then used = true end
+    for _, g in ipairs(reg.groups) do
+      for _, key in ipairs(g.keys) do
+        for _, m in ipairs(type(key[1]) == 'table' and key[1] or { key[1] }) do
+          local same_mode = (p.mode or 'n') == m or ((p.mode == 'v') and (m == 'x' or m == 'v'))
+          if same_mode and key[2] ~= p[1] and key[2]:sub(1, #p[1]) == p[1] then used = true end
+        end
+      end
     end
-    if not used then bad[#bad + 1] = g[1] .. ' (' .. g.group .. ')' end
+    if not used then bad[#bad + 1] = ('%s "%s"'):format(p[1], p.group) end
   end
-  return #bad == 0, 'groups with no keys: ' .. table.concat(bad, ', ')
+  return #bad == 0, 'which-key labels for prefixes that have no keys: ' .. table.concat(bad, ', ')
 end)
 
 -- Owner's choices at the Task 2 checkpoint.
@@ -887,6 +897,66 @@ check.global('no_buffer_state_leaks', function()
   return #leaks == 0, table.concat(leaks, '; ')
 end)
 
+-- Step-1 leftovers.
+check.global('lualine_follows_theme', function()
+  local theme = require('lualine').get_config().options.theme
+  return theme == 'auto', 'lualine theme = ' .. vim.inspect(theme)
+end)
+
+check.global('csharp_fixture_unpinned', function()
+  local text = table.concat(vim.fn.readfile(fixtures .. '/csharp/fixture.csproj'), '\n')
+  return not text:find('>net%d'), 'fixture.csproj names a specific .NET version'
+end)
+
+-- A server installed with :MasonInstall mid-session starts without a restart.
+check.global('mason_install_enables_server', function()
+  local lsp = require('czernous.lsp')
+  if vim.tbl_contains(lsp.enabled, 'vtsls') then return 'skip', 'vtsls already installed here' end
+  local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p')
+  vim.fn.writefile({ '#!/bin/sh', 'exit 0' }, dir .. '/vtsls'); vim.fn.setfperm(dir .. '/vtsls', 'rwxr-xr-x')
+  local old = vim.env.PATH; vim.env.PATH = dir .. ':' .. old
+  vim.cmd('enew'); vim.bo.filetype = 'mason' -- what opening the Mason window does
+  require('mason-registry'):emit('package:install:success', {})
+  vim.wait(8000, function() return vim.tbl_contains(lsp.enabled, 'vtsls') end, 50)
+  local ok = vim.tbl_contains(lsp.enabled, 'vtsls')
+  vim.env.PATH = old
+  if ok then
+    vim.lsp.enable('vtsls', false)
+    lsp.enabled = vim.tbl_filter(function(n) return n ~= 'vtsls' end, lsp.enabled)
+  end
+  vim.cmd('silent! bwipeout!')
+  return ok, 'vtsls not enabled after a Mason install event'
+end)
+
+check.global('spotless_in_subproject_detected', function()
+  local dir = vim.fn.tempname(); vim.fn.mkdir(dir .. '/mod/src', 'p')
+  vim.fn.writefile({ 'plugins { java }' }, dir .. '/build.gradle.kts')
+  vim.fn.writefile({ 'plugins { id("com.diffplug.spotless") }' }, dir .. '/mod/build.gradle.kts')
+  vim.fn.writefile({ '#!/bin/sh', 'echo "IS DIRTY" >&2', 'tr a-z A-Z' }, dir .. '/gradlew'); vim.fn.setfperm(dir .. '/gradlew', 'rwxr-xr-x')
+  vim.fn.writefile({ 'hello' }, dir .. '/mod/src/x.txt')
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/mod/src/x.txt')
+  require('czernous.format').format()
+  vim.wait(5000, function() return vim.api.nvim_buf_get_lines(0, 0, 1, false)[1] == 'HELLO' end, 50)
+  return vim.api.nvim_buf_get_lines(0, 0, 1, false)[1] == 'HELLO', 'Spotless in a subproject build file was not used'
+end)
+
+check.global('spotless_gradlew_not_executable_warns', function()
+  local dir = vim.fn.tempname(); vim.fn.mkdir(dir .. '/src', 'p')
+  vim.fn.writefile({ 'plugins { id("com.diffplug.spotless") }' }, dir .. '/build.gradle.kts')
+  vim.fn.writefile({ '#!/bin/sh', 'exit 0' }, dir .. '/gradlew'); vim.fn.setfperm(dir .. '/gradlew', 'rw-r--r--')
+  vim.fn.writefile({ 'hello' }, dir .. '/src/x.txt')
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/src/x.txt')
+  local before, warned, fell_back = #check.errors, false, false
+  vim.api.nvim_create_user_command('Neoformat', function() fell_back = true end, { force = true })
+  local n = vim.notify
+  vim.notify = function(m, l, o) if l == vim.log.levels.WARN and tostring(m):find('gradlew') then warned = true end return n(m, l, o) end
+  local ok, err = pcall(require('czernous.format').format)
+  vim.wait(1500, function() return fell_back end, 50)
+  vim.notify = n
+  return ok and warned and fell_back and #check.errors == before,
+    ('ok=%s warned=%s fell back=%s errors=%d %s'):format(tostring(ok), tostring(warned), tostring(fell_back), #check.errors - before, tostring(err or ''))
+end)
+
 check.global('no_cfg_dir', function()
   return vim.fn.isdirectory(root .. '/lua/czernous/cfg') == 0, 'lua/czernous/cfg still exists'
 end)
@@ -999,6 +1069,7 @@ local function run()
     if only and not g.name:match(only) then goto continue end
     local ok, passed, msg = pcall(g.fn)
     if not ok then report('FAIL', g.name, passed)
+    elseif passed == 'skip' then report('SKIP', g.name, msg)
     elseif passed then report('PASS', g.name)
     else report('FAIL', g.name, msg) end
     ::continue::
