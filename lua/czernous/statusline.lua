@@ -1,7 +1,8 @@
 -- The statusline: one quiet line with what you need and nothing else.
 --
---   NORMAL  src/main.go [+]    main   E2 W1                     go   12:8
---   mode    file  modified    branch errors/warnings      filetype   line:column
+--   NORMAL  src/main.go [+]   git:main   E2 W1 H3                go   12:8
+--   mode    file  modified    branch     problems          filetype   line:column
+--   (E errors, W warnings, I information, H hints -- only the ones present)
 --
 -- Built in, no plugin. Costs nothing while you move around: the mode, branch and
 -- problem counts are plain text written into the 'statusline' option only when
@@ -9,7 +10,8 @@
 -- update). The file name and cursor position are Neovim's own built-in items,
 -- so redrawing the line runs no Lua at all.
 --
--- Colours come from the active theme (see M.highlights); backgrounds are left
+-- Plain text only: no icons or special symbols, so it looks the same in any
+-- terminal font. Colours come from the active theme (see M.highlights); backgrounds are left
 -- alone so the line is transparent with the rest of the UI.
 
 local M = {}
@@ -37,19 +39,22 @@ end
 local function git_part(buf)
   local head = vim.b[buf].gitsigns_head
   if not head or head == '' then return '' end
-  -- U+E0A0, the usual "git branch" symbol, so the name can't be read as part of the path
-  return ('   %%#CzStlDim#\238\130\160 %s%%#CzStlText#'):format(literal(head))
+  -- plain text, so it reads as a branch (not part of the path) in any font
+  return ('   %%#CzStlDim#git:%s%%#CzStlText#'):format(literal(head))
 end
 
 local function problems_part(buf)
   local counts = vim.diagnostic.count(buf)
-  local errors = counts[vim.diagnostic.severity.ERROR] or 0
-  local warnings = counts[vim.diagnostic.severity.WARN] or 0
-  local out = ''
-  if errors > 0 then out = out .. ('  %%#CzStlError#E%d'):format(errors) end
-  if warnings > 0 then out = out .. ('%s%%#CzStlWarn#W%d'):format(errors > 0 and ' ' or '  ', warnings) end
-  if out ~= '' then out = out .. '%#CzStlText#' end
-  return out
+  local severity = vim.diagnostic.severity
+  local out = {}
+  -- E errors, W warnings, I information, H hints (suggestions); only those present
+  for _, kind in ipairs({ { severity.ERROR, 'E', 'CzStlError' }, { severity.WARN, 'W', 'CzStlWarn' },
+    { severity.INFO, 'I', 'CzStlInfo' }, { severity.HINT, 'H', 'CzStlHint' } }) do
+    local n = counts[kind[1]] or 0
+    if n > 0 then out[#out + 1] = ('%%#%s#%s%d'):format(kind[3], kind[2], n) end
+  end
+  if #out == 0 then return '' end
+  return '   ' .. table.concat(out, ' ') .. '%#CzStlText#'
 end
 
 --- Rebuild the line for the current window and store it in the option. Called
@@ -89,6 +94,8 @@ function M.highlights()
   set(0, 'CzStlCommand', { fg = fg('Constant'), bold = true })
   set(0, 'CzStlError', { fg = fg('DiagnosticError') })
   set(0, 'CzStlWarn', { fg = fg('DiagnosticWarn') })
+  set(0, 'CzStlInfo', { fg = fg('DiagnosticInfo') })
+  set(0, 'CzStlHint', { fg = fg('DiagnosticHint') })
 end
 
 function M.setup()

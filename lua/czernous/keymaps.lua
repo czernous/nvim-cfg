@@ -100,6 +100,7 @@ M.groups = {
       { 'n', '<leader>d', [["_d]], desc = 'Delete without yanking' },
       { 'n', '<leader>s', [[:%s/\<<C-r><C-w>\>/<C-r><C-w>/gI<Left><Left><Left>]], desc = 'Substitute word under cursor' },
       { 'n', '<leader>f', function() require('czernous.format').format() end, desc = 'Format buffer (project formatter / LSP)' },
+      { 'n', '<leader>F', function() require('czernous.format').spotless() end, desc = 'Format with Spotless (exact, Gradle projects)' },
       { 'n', '<leader>x', '<cmd>!chmod +x %<CR>', desc = 'Make file executable' },
       { 'n', '<leader><leader>', function()
         if vim.bo.filetype == 'lua' or vim.bo.filetype == 'vim' then

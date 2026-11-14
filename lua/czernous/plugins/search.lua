@@ -21,6 +21,11 @@ return {
       local telescope = require('telescope')
       telescope.setup({
         defaults = {
+          -- no file-type icons (they need a special font); plain names
+          disable_devicons = true,
+          prompt_prefix = '> ',
+          selection_caret = '> ',
+          entry_prefix = '  ',
           mappings = {
             i = { ['<C-u>'] = false, ['<C-d>'] = false },
           },

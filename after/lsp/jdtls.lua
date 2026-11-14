@@ -12,6 +12,18 @@ local function data_dir(root)
 end
 
 local config = {
+  -- Format Java the way the project does: if its Gradle build formats with an
+  -- Eclipse formatter file (what Spotless's eclipse() step uses), give jdtls
+  -- -- the same formatter engine -- that file. Found per project once the
+  -- server is up; nothing is hard-coded.
+  on_init = function(client)
+    local profile = client.root_dir and require('czernous.format').eclipse_profile(client.root_dir)
+    if not profile then return end
+    client.settings = vim.tbl_deep_extend('force', client.settings or {}, {
+      java = { format = { settings = { url = vim.uri_from_fname(profile) } } },
+    })
+    client:notify('workspace/didChangeConfiguration', { settings = client.settings })
+  end,
   cmd = function(dispatchers, cfg)
     local cmd = { 'jdtls', '-data', data_dir(cfg.root_dir) }
     for arg in (vim.env.JDTLS_JVM_ARGS or ''):gmatch('%S+') do

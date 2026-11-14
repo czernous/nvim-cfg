@@ -46,6 +46,9 @@ return {
       },
       completion = {
         documentation = { auto_show = true, auto_show_delay_ms = 150 },
+        -- Each row: the suggestion, then what kind of thing it is, in words
+        -- ("Function", "Variable"...). No icons: they need a special font.
+        menu = { draw = { columns = { { 'label', 'label_description', gap = 1 }, { 'kind' } } } },
       },
       signature = { enabled = true }, -- argument hints while typing a call
     },

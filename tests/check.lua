@@ -467,58 +467,6 @@ check.global('signcolumn_fixed', function()
   return vim.o.signcolumn == 'yes', 'signcolumn=' .. vim.o.signcolumn
 end)
 
--- <leader>f: project's Spotless if present, else LSP, else Neoformat.
-check.global('format_falls_back', function()
-  local ok, fmt = pcall(require, 'czernous.format')
-  if not ok or not fmt.format then return false, 'czernous.format.format missing' end
-  vim.cmd('silent! %bwipeout!'); vim.cmd('enew'); vim.bo.filetype = 'text'
-  local called = false
-  vim.api.nvim_create_user_command('Neoformat', function() called = true end, { force = true })
-  fmt.format()
-  return called, 'Neoformat not called in a buffer without LSP'
-end)
-
--- Fake Gradle project whose ./gradlew behaves like the Spotless IDE hook.
-local function fake_spotless_project(script)
-  local dir = vim.fn.tempname(); vim.fn.mkdir(dir .. '/src', 'p')
-  vim.fn.writefile({ 'plugins { id("com.diffplug.spotless") }' }, dir .. '/build.gradle.kts')
-  vim.fn.writefile(script, dir .. '/gradlew'); vim.fn.setfperm(dir .. '/gradlew', 'rwxr-xr-x')
-  vim.fn.writefile({ 'hello', 'world' }, dir .. '/src/x.txt')
-  return dir
-end
-
-check.global('format_uses_spotless', function()
-  local dir = fake_spotless_project({ '#!/bin/sh', 'echo "IS DIRTY" >&2', 'tr a-z A-Z' })
-  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/src/x.txt')
-  require('czernous.format').format()
-  vim.wait(5000, function() return vim.api.nvim_buf_get_lines(0, 0, 1, false)[1] == 'HELLO' end, 50)
-  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-  return vim.deep_equal(lines, { 'HELLO', 'WORLD' }), vim.inspect(lines)
-end)
-
-check.global('format_spotless_clean_is_noop', function()
-  local dir = fake_spotless_project({ '#!/bin/sh', 'cat >/dev/null', 'echo "IS CLEAN" >&2' })
-  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/src/x.txt')
-  require('czernous.format').format()
-  vim.wait(1500)
-  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-  return vim.deep_equal(lines, { 'hello', 'world' }) and not vim.bo.modified, vim.inspect(lines)
-end)
-
-check.global('format_spotless_failure_warns', function()
-  local dir = fake_spotless_project({ '#!/bin/sh', 'cat >/dev/null', 'echo "BUILD FAILED" >&2', 'exit 1' })
-  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/src/x.txt')
-  local before, warned = #check.errors, false
-  local n = vim.notify
-  vim.notify = function(m, l, o) if l == vim.log.levels.WARN then warned = true end return n(m, l, o) end
-  require('czernous.format').format()
-  vim.wait(3000, function() return warned end, 50)
-  vim.notify = n
-  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-  return warned and #check.errors == before and vim.deep_equal(lines, { 'hello', 'world' }),
-    ('warned=%s errors=%d lines=%s'):format(warned, #check.errors - before, vim.inspect(lines))
-end)
-
 check.global('source_only_lua_vim', function()
   local key
   for _, k in ipairs(require('czernous.keymaps').all()) do if k.lhs == '<leader><leader>' then key = k end end
@@ -707,42 +655,6 @@ check.global('special_buffers_are_quiet', function()
     vim.wait(300)
   end
   return #check.errors == before, table.concat(check.errors, ' | ')
-end)
-
-check.global('format_spotless_uncovered_falls_back', function()
-  -- Hook exits 0 with no IS DIRTY/IS CLEAN = file not in any Spotless target.
-  local dir = fake_spotless_project({ '#!/bin/sh', 'cat >/dev/null', 'exit 0' })
-  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/src/x.txt')
-  local called, warned = false, false
-  vim.api.nvim_create_user_command('Neoformat', function() called = true end, { force = true })
-  local n = vim.notify
-  vim.notify = function(m, l, o) if l == vim.log.levels.WARN then warned = true end return n(m, l, o) end
-  require('czernous.format').format()
-  vim.wait(3000, function() return called end, 50)
-  vim.notify = n
-  return called and not warned, ('fell back=%s warned=%s'):format(called, warned)
-end)
-
-check.global('format_spotless_empty_output_keeps_buffer', function()
-  local dir = fake_spotless_project({ '#!/bin/sh', 'cat >/dev/null', 'echo "IS DIRTY" >&2' })
-  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/src/x.txt')
-  require('czernous.format').format()
-  vim.wait(1500)
-  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-  return vim.deep_equal(lines, { 'hello', 'world' }), vim.inspect(lines)
-end)
-
-check.global('format_spotless_skips_unnamed_buffers', function()
-  local dir = fake_spotless_project({ '#!/bin/sh', 'touch "$0.ran"', 'cat >/dev/null', 'echo "IS CLEAN" >&2' })
-  local cwd = vim.fn.getcwd()
-  vim.cmd('silent! %bwipeout!'); vim.cmd.cd(dir); vim.cmd('enew')
-  local called = false
-  vim.api.nvim_create_user_command('Neoformat', function() called = true end, { force = true })
-  require('czernous.format').format()
-  vim.wait(1000)
-  vim.cmd.cd(cwd)
-  local ran = vim.fn.filereadable(dir .. '/gradlew.ran') == 1
-  return called and not ran, ('fallback=%s gradlew ran=%s'):format(called, ran)
 end)
 
 check.global('format_command_matches_key', function()
@@ -1068,35 +980,6 @@ check.global('mason_install_enables_server', function()
   return ok, 'vtsls not enabled after a Mason install event'
 end)
 
-check.global('spotless_in_subproject_detected', function()
-  local dir = vim.fn.tempname(); vim.fn.mkdir(dir .. '/mod/src', 'p')
-  vim.fn.writefile({ 'plugins { java }' }, dir .. '/build.gradle.kts')
-  vim.fn.writefile({ 'plugins { id("com.diffplug.spotless") }' }, dir .. '/mod/build.gradle.kts')
-  vim.fn.writefile({ '#!/bin/sh', 'echo "IS DIRTY" >&2', 'tr a-z A-Z' }, dir .. '/gradlew'); vim.fn.setfperm(dir .. '/gradlew', 'rwxr-xr-x')
-  vim.fn.writefile({ 'hello' }, dir .. '/mod/src/x.txt')
-  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/mod/src/x.txt')
-  require('czernous.format').format()
-  vim.wait(5000, function() return vim.api.nvim_buf_get_lines(0, 0, 1, false)[1] == 'HELLO' end, 50)
-  return vim.api.nvim_buf_get_lines(0, 0, 1, false)[1] == 'HELLO', 'Spotless in a subproject build file was not used'
-end)
-
-check.global('spotless_gradlew_not_executable_warns', function()
-  local dir = vim.fn.tempname(); vim.fn.mkdir(dir .. '/src', 'p')
-  vim.fn.writefile({ 'plugins { id("com.diffplug.spotless") }' }, dir .. '/build.gradle.kts')
-  vim.fn.writefile({ '#!/bin/sh', 'exit 0' }, dir .. '/gradlew'); vim.fn.setfperm(dir .. '/gradlew', 'rw-r--r--')
-  vim.fn.writefile({ 'hello' }, dir .. '/src/x.txt')
-  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/src/x.txt')
-  local before, warned, fell_back = #check.errors, false, false
-  vim.api.nvim_create_user_command('Neoformat', function() fell_back = true end, { force = true })
-  local n = vim.notify
-  vim.notify = function(m, l, o) if l == vim.log.levels.WARN and tostring(m):find('gradlew') then warned = true end return n(m, l, o) end
-  local ok, err = pcall(require('czernous.format').format)
-  vim.wait(1500, function() return fell_back end, 50)
-  vim.notify = n
-  return ok and warned and fell_back and #check.errors == before,
-    ('ok=%s warned=%s fell back=%s errors=%d %s'):format(tostring(ok), tostring(warned), tostring(fell_back), #check.errors - before, tostring(err or ''))
-end)
-
 ---------------------------------------------------------------------------
 -- Startup: nothing loads before the first screen except the theme
 ---------------------------------------------------------------------------
@@ -1267,13 +1150,16 @@ check.global('statusline_shows_problems_and_branch', function()
     { lnum = 0, col = 0, message = 'e1', severity = vim.diagnostic.severity.ERROR },
     { lnum = 1, col = 0, message = 'e2', severity = vim.diagnostic.severity.ERROR },
     { lnum = 2, col = 0, message = 'w1', severity = vim.diagnostic.severity.WARN },
+    { lnum = 2, col = 0, message = 'h1', severity = vim.diagnostic.severity.HINT },
   })
   vim.b[buf].gitsigns_head = 'feature/x%y'
   vim.api.nvim_exec_autocmds('User', { pattern = 'GitSignsUpdate', modeline = false })
   vim.wait(150)
   local text = rendered_statusline()
   vim.diagnostic.reset(ns, buf)
-  local ok = text:find('E2', 1, true) and text:find('W1', 1, true) and text:find('feature/x%y', 1, true)
+  local ok = text:find('E2', 1, true) and text:find('W1', 1, true) and text:find('H1', 1, true) and text:find('git:feature/x%y', 1, true)
+  -- plain text only: nothing outside ASCII, so it renders in any font
+  ok = ok and not text:find('[\128-\255]')
   return ok ~= nil, 'rendered: [' .. text .. '] (want E2, W1 and the branch, with % shown literally)'
 end)
 
@@ -1343,6 +1229,156 @@ end)
 check.global('kotlin_server_known', function()
   local servers = require('czernous.lsp').servers
   return servers.kotlin_language_server ~= nil or servers.kotlin_lsp ~= nil, 'no Kotlin entry in lsp.servers'
+end)
+
+---------------------------------------------------------------------------
+-- Formatting: <leader>f = the project's formatter (conform) or the language
+-- server; <leader>F = exact Spotless in Gradle projects that use it.
+---------------------------------------------------------------------------
+--- Fake Gradle project whose ./gradlew behaves like the Spotless IDE hook.
+local function fake_spotless_project(script, build_file)
+  local dir = vim.fn.tempname(); vim.fn.mkdir(dir .. '/src', 'p')
+  vim.fn.writefile({ build_file or 'plugins { id("com.diffplug.spotless") }' }, dir .. '/build.gradle.kts')
+  vim.fn.writefile(script, dir .. '/gradlew'); vim.fn.setfperm(dir .. '/gradlew', 'rwxr-xr-x')
+  vim.fn.writefile({ 'hello', 'world' }, dir .. '/src/x.txt')
+  return dir
+end
+
+--- Run fn while counting WARN notifications; returns count.
+local function count_warnings(fn)
+  local warned = 0
+  local n = vim.notify
+  vim.notify = function(m, l, o) if l == vim.log.levels.WARN then warned = warned + 1 end return n(m, l, o) end
+  local ok, err = pcall(fn)
+  vim.notify = n
+  return warned, ok, err
+end
+
+check.global('format_uses_project_formatter', function()
+  -- a formatter program on $PATH (here a fake `stylua` that upper-cases) is used for its filetype
+  local bin = vim.fn.tempname(); vim.fn.mkdir(bin, 'p')
+  vim.fn.writefile({ '#!/bin/sh', 'tr a-z A-Z' }, bin .. '/stylua'); vim.fn.setfperm(bin .. '/stylua', 'rwxr-xr-x')
+  local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p')
+  vim.fn.writefile({ 'local a = 1' }, dir .. '/f.lua')
+  local old = vim.env.PATH; vim.env.PATH = bin .. ':' .. old
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/f.lua')
+  require('czernous.format').format()
+  vim.wait(5000, function() return vim.api.nvim_buf_get_lines(0, 0, 1, false)[1] == 'LOCAL A = 1' end, 50)
+  local line = vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]
+  vim.env.PATH = old
+  vim.cmd('silent! bwipeout!')
+  return line == 'LOCAL A = 1', 'buffer is ' .. vim.inspect(line)
+end)
+
+check.global('format_without_any_formatter_says_so', function()
+  vim.cmd('silent! %bwipeout!'); vim.cmd('enew'); vim.bo.filetype = 'czunknownlang'
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'x' })
+  local before = #check.errors
+  local warned, ok = count_warnings(function() require('czernous.format').format(); vim.wait(500) end)
+  check.snapshot_messages()
+  vim.cmd('silent! bwipeout!')
+  return ok and warned == 1 and #check.errors == before, ('ok=%s warnings=%d errors=%d'):format(tostring(ok), warned, #check.errors - before)
+end)
+
+check.global('format_does_not_run_gradle', function()
+  -- <leader>f must stay instant in Spotless projects: Gradle only runs on <leader>F
+  local dir = fake_spotless_project({ '#!/bin/sh', 'touch "$0.ran"', 'cat >/dev/null', 'echo "IS CLEAN" >&2' })
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/src/x.txt')
+  count_warnings(function() require('czernous.format').format(); vim.wait(800) end)
+  return vim.fn.filereadable(dir .. '/gradlew.ran') == 0, 'gradlew was run by <leader>f'
+end)
+
+check.global('spotless_formats_exactly', function()
+  local dir = fake_spotless_project({ '#!/bin/sh', 'echo "IS DIRTY" >&2', 'tr a-z A-Z' })
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/src/x.txt')
+  require('czernous.format').spotless()
+  vim.wait(5000, function() return vim.api.nvim_buf_get_lines(0, 0, 1, false)[1] == 'HELLO' end, 50)
+  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+  return vim.deep_equal(lines, { 'HELLO', 'WORLD' }), vim.inspect(lines)
+end)
+
+check.global('spotless_clean_is_noop', function()
+  local dir = fake_spotless_project({ '#!/bin/sh', 'cat >/dev/null', 'echo "IS CLEAN" >&2' })
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/src/x.txt')
+  require('czernous.format').spotless()
+  vim.wait(1500)
+  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+  return vim.deep_equal(lines, { 'hello', 'world' }) and not vim.bo.modified, vim.inspect(lines)
+end)
+
+check.global('spotless_failures_warn_and_keep_buffer', function()
+  local cases = {
+    { 'gradle fails', { '#!/bin/sh', 'cat >/dev/null', 'echo "BUILD FAILED" >&2', 'exit 1' } },
+    { 'says dirty but returns nothing', { '#!/bin/sh', 'cat >/dev/null', 'echo "IS DIRTY" >&2' } },
+    { 'file not covered by Spotless', { '#!/bin/sh', 'cat >/dev/null', 'exit 0' } },
+  }
+  local bad = {}
+  for _, c in ipairs(cases) do
+    local dir = fake_spotless_project(c[2])
+    vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/src/x.txt')
+    local before = #check.errors
+    local warned = count_warnings(function() require('czernous.format').spotless(); vim.wait(1500) end)
+    local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+    if warned ~= 1 or #check.errors ~= before or not vim.deep_equal(lines, { 'hello', 'world' }) then
+      bad[#bad + 1] = ('%s: warnings=%d errors=%d lines=%s'):format(c[1], warned, #check.errors - before, vim.inspect(lines))
+    end
+  end
+  return #bad == 0, table.concat(bad, '; ')
+end)
+
+check.global('spotless_key_outside_spotless_project_warns', function()
+  local bad = {}
+  -- a plain file, an unnamed buffer inside a Spotless project folder, a non-executable gradlew
+  local plain = vim.fn.tempname() .. '.txt'; vim.fn.writefile({ 'x' }, plain)
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(plain)
+  if count_warnings(function() require('czernous.format').spotless(); vim.wait(300) end) ~= 1 then bad[#bad + 1] = 'plain file: no single warning' end
+  local dir = fake_spotless_project({ '#!/bin/sh', 'touch "$0.ran"', 'cat >/dev/null', 'echo "IS CLEAN" >&2' })
+  local cwd = vim.fn.getcwd()
+  vim.cmd('silent! %bwipeout!'); vim.cmd.cd(dir); vim.cmd('enew')
+  local w = count_warnings(function() require('czernous.format').spotless(); vim.wait(600) end)
+  vim.cmd.cd(cwd)
+  if w ~= 1 or vim.fn.filereadable(dir .. '/gradlew.ran') == 1 then bad[#bad + 1] = 'unnamed buffer: warnings=' .. w .. ' or gradlew ran' end
+  local dir2 = fake_spotless_project({ '#!/bin/sh', 'exit 0' }); vim.fn.setfperm(dir2 .. '/gradlew', 'rw-r--r--')
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir2 .. '/src/x.txt')
+  local before = #check.errors
+  local w2, ok = count_warnings(function() require('czernous.format').spotless(); vim.wait(600) end)
+  if w2 ~= 1 or not ok or #check.errors ~= before then bad[#bad + 1] = ('non-executable gradlew: warnings=%d ok=%s'):format(w2, tostring(ok)) end
+  return #bad == 0, table.concat(bad, '; ')
+end)
+
+check.global('spotless_in_subproject_detected', function()
+  local dir = fake_spotless_project({ '#!/bin/sh', 'echo "IS DIRTY" >&2', 'tr a-z A-Z' }, 'plugins { java }')
+  vim.fn.mkdir(dir .. '/mod/src', 'p')
+  vim.fn.writefile({ 'plugins { id("com.diffplug.spotless") }' }, dir .. '/mod/build.gradle.kts')
+  vim.fn.writefile({ 'hello' }, dir .. '/mod/src/y.txt')
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/mod/src/y.txt')
+  require('czernous.format').spotless()
+  vim.wait(5000, function() return vim.api.nvim_buf_get_lines(0, 0, 1, false)[1] == 'HELLO' end, 50)
+  return vim.api.nvim_buf_get_lines(0, 0, 1, false)[1] == 'HELLO', 'Spotless declared in a module build file was not used'
+end)
+
+-- Java: jdtls formats with the project's own Eclipse formatter file (the one Spotless uses).
+check.global('eclipse_formatter_profile_found', function()
+  local fmt = require('czernous.format')
+  if not fmt.eclipse_profile then return false, 'format.eclipse_profile missing' end
+  local function project(build, files)
+    local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p')
+    vim.fn.writefile({ build }, dir .. '/build.gradle.kts')
+    for _, f in ipairs(files) do vim.fn.mkdir(vim.fn.fnamemodify(dir .. '/' .. f, ':h'), 'p'); vim.fn.writefile({ '<profiles/>' }, dir .. '/' .. f) end
+    return dir
+  end
+  local a = project('spotless { java { eclipse().configFile(rootProject.file("config/fmt.xml")) } }', { 'config/fmt.xml' })
+  local b = project('plugins { java }', { 'config/eclipse-formatter.xml' })
+  local c = project('plugins { java }', {})
+  local d = project('spotless { java { eclipse().configFile("missing.xml") } }', {})
+  local ra, rb, rc, rd = fmt.eclipse_profile(a), fmt.eclipse_profile(b), fmt.eclipse_profile(c), fmt.eclipse_profile(d)
+  local ok = ra == a .. '/config/fmt.xml' and rb == b .. '/config/eclipse-formatter.xml' and rc == nil and rd == nil
+  return ok, ('declared -> %s; conventional -> %s; none -> %s; declared but missing -> %s'):format(tostring(ra), tostring(rb), tostring(rc), tostring(rd))
+end)
+
+check.global('formatter_plugins', function()
+  local lock = table.concat(vim.fn.readfile(root .. '/lazy-lock.json'), '\n')
+  return lock:find('"conform.nvim"', 1, true) ~= nil and not lock:find('"neoformat"', 1, true), 'want conform.nvim in the lockfile and neoformat gone'
 end)
 
 check.global('no_cfg_dir', function()
