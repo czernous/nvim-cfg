@@ -153,3 +153,6 @@ Owner checkpoint, 2026-11-14:
 | Plugin manager | **Keep lazy.nvim** (ADR 0001 accepted) |
 | Java formatting | **Instant + exact on demand**: `<leader>f` = jdtls with the project's Eclipse formatter file; `<leader>F` = real Spotless |
 | All remaining verdicts and critique fixes | **Approved**: drop telescope-fzf-native, rhubarb, undotree plugin (→ built-in), our selection module (→ built-in `an`/`in`), Trouble; base16 theme; conform.nvim; load everything on demand; options and keymap fixes — owner tests afterwards and may veto; every key change is listed |
+| lualine | **Replace** (owner: "very ugly"): small built-in statusline, no plugin — mode, file, branch, diagnostics · filetype, position; nothing recomputed per cursor move |
+| netrw banner | **Off** (owner: takes space, looks rough) |
+| UI direction (for 2b) | No file-tree sidebar; an on-demand floating explorer to see structure; splits are low priority (laptop; tmux/WM on Linux); a welcome screen with load time, only if free for performance (plain buffer drawn after startup) |
