@@ -278,9 +278,10 @@ function M.lsp(bufnr) set_buffer_group('lsp', bufnr) end
 --- Buffer-local git hunk keys (called from gitsigns on_attach).
 function M.gitsigns(bufnr) set_buffer_group('gitsigns', bufnr) end
 
---- which-key `spec`: the group labels above. (A check fails if a label's
---- prefix has no keys, so this list can't go stale.)
-function M.which_key() return M.prefixes end
+--- which-key `spec`: a copy of the group labels above. A copy, because which-key
+--- empties the table it is given. (A check fails if a label's prefix has no
+--- keys, so the list can't go stale.)
+function M.which_key() return vim.deepcopy(M.prefixes) end
 
 --- Flat list of every key: { mode, lhs, desc, group }.
 function M.all()

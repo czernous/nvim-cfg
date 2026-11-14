@@ -551,6 +551,7 @@ check.global('which_key_groups_used', function()
     end
     if not used then bad[#bad + 1] = ('%s "%s"'):format(p[1], p.group) end
   end
+  if #(reg.prefixes or {}) == 0 then return false, 'keymaps.prefixes is empty (was it handed to which-key without copying?)' end
   return #bad == 0, 'which-key labels for prefixes that have no keys: ' .. table.concat(bad, ', ')
 end)
 
