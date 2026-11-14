@@ -66,6 +66,7 @@ M.current = nil
 M.shades = {}
 
 local applying = false
+local restyle_pending = false
 
 --------------------------------------------------------------------------------
 -- base16 palettes (environment-supplied)
@@ -83,7 +84,12 @@ function M.load_file(path)
     if type(palette[key]) ~= 'string' then return nil, path .. ' has no ' .. key end
   end
   palette.name = palette.name or vim.fn.fnamemodify(path, ':t:r')
-  palette.variant = palette.variant or 'dark'
+  if palette.variant ~= 'dark' and palette.variant ~= 'light' then
+    -- not stated: a palette whose background (base00) is bright is a light one
+    local n = tonumber(palette.base00:sub(2), 16) or 0
+    local r, g, b = math.floor(n / 65536), math.floor(n / 256) % 256, n % 256
+    palette.variant = (0.299 * r + 0.587 * g + 0.114 * b) > 128 and 'light' or 'dark'
+  end
   return palette
 end
 
@@ -128,7 +134,15 @@ function M.is_accent(name) return accent_set()[name] == true or M.is_selection(n
 function M.restyle()
   local shades = M.shades
   local selection = vim.api.nvim_get_hl(0, { name = 'Visual', link = false }).bg
+  local popup = vim.api.nvim_get_hl(0, { name = 'NormalFloat', link = false }).bg
   for name, def in pairs(vim.api.nvim_get_hl(0, {})) do
+    -- All-or-nothing, in both directions: with transparency OFF a popup's border
+    -- must be as solid as the popup. Themes often give borders no background
+    -- (they rely on the editor's), which would leave a see-through frame.
+    if not M.opts.transparent and popup and not def.bg and not def.link and name:find('Border$') then
+      def.bg = popup
+      vim.api.nvim_set_hl(0, name, def)
+    end
     if def.bg and M.is_selection(name) and name ~= 'Visual' and name ~= 'VisualNOS' then
       -- one selection colour everywhere (only groups that paint a background:
       -- parts like PmenuKindSel just colour text on top of it)
@@ -151,11 +165,16 @@ local function style()
     if bg then shades[bg] = true end
   end
   M.shades = shades
-  M.restyle()
-  -- Borders separate a popup from the code behind it: quiet, never loud.
+  -- Borders separate a popup from the code behind it: quiet, never loud. (Only
+  -- the colour of the line is set here; whether a border has a background is
+  -- decided by the transparency rule.)
   local comment = vim.api.nvim_get_hl(0, { name = 'Comment', link = false }).fg
-  vim.api.nvim_set_hl(0, 'FloatBorder', { fg = comment })
-  vim.api.nvim_set_hl(0, 'WinSeparator', { fg = comment })
+  for _, name in ipairs({ 'FloatBorder', 'WinSeparator' }) do
+    local def = vim.api.nvim_get_hl(0, { name = name, link = false })
+    def.fg = comment
+    vim.api.nvim_set_hl(0, name, def)
+  end
+  M.restyle()
 end
 
 --------------------------------------------------------------------------------
@@ -165,11 +184,20 @@ end
 -- thrown away whenever plugins are updated. Bump CACHE_VERSION when the rules
 -- above change. The key is compared as plain text (hashing it cost 3.9 ms).
 --------------------------------------------------------------------------------
-local CACHE_VERSION = 4
+local CACHE_VERSION = 5
 local cache_dir = vim.fn.stdpath('cache') .. '/czernous-theme'
 
 local function cache_key(theme)
-  local parts = { tostring(CACHE_VERSION), theme.name, tostring(M.opts.transparent), vim.env.VIMRUNTIME or '' }
+  -- Everything the saved result depends on, as cheap strings: this file's rules
+  -- (version), the theme, the setting, the Neovim build (its runtime folder and
+  -- when that last changed), and the installed plugins (where they come from and
+  -- when the lockfile last changed).
+  local runtime = vim.env.VIMRUNTIME or ''
+  local runtime_stat = vim.uv.fs_stat(runtime)
+  local lock_stat = vim.uv.fs_stat(vim.fn.stdpath('config') .. '/lazy-lock.json')
+  local parts = { tostring(CACHE_VERSION), theme.name, tostring(M.opts.transparent), runtime,
+    tostring(runtime_stat and runtime_stat.mtime.sec or 0), vim.env.NVIM_PLUGIN_ROOT or '',
+    tostring(lock_stat and lock_stat.mtime.sec or 0) }
   if theme.palette then
     for i = 0, 15 do parts[#parts + 1] = theme.palette[('base%02X'):format(i)] end
   end
@@ -213,7 +241,14 @@ end
 
 local function apply(theme)
   applying = true
-  theme.load()
+  -- A theme that cannot load (its plugin missing after an offline first start,
+  -- say) must not stop the rest of the config: keep Neovim's own colours, say so.
+  local ok, err = pcall(theme.load)
+  if not ok then
+    applying = false
+    vim.notify(('Theme %s could not be loaded; using Neovim\'s default colours.\n%s'):format(theme.name, tostring(err)), vim.log.levels.WARN)
+    return false
+  end
   -- Colour-scheme plugins register themselves as the active scheme; Neovim would
   -- then reload them (without our rules) whenever 'background' changes. We
   -- follow 'background' ourselves instead.
@@ -224,6 +259,7 @@ local function apply(theme)
   applying = false
   -- Let other parts of the UI (the statusline) pick up the new colours.
   vim.api.nvim_exec_autocmds('User', { pattern = 'CzernousTheme', modeline = false })
+  return true
 end
 
 --- Theme for the current terminal polarity (or the palette supplied from outside).
@@ -242,8 +278,7 @@ end
 
 function M.setup()
   local theme = pick()
-  if not apply_cached(theme) then
-    apply(theme)
+  if not apply_cached(theme) and apply(theme) then
     write_cache(theme) -- clean start: only Neovim's and the theme's groups exist
   end
 
@@ -252,7 +287,15 @@ function M.setup()
   vim.api.nvim_create_autocmd('User', {
     group = group,
     pattern = { 'LazyLoad', 'VeryLazy' },
-    callback = function() if M.current then M.restyle() end end,
+    -- several plugins often load in one burst (opening a file): restyle once after it
+    callback = function()
+      if restyle_pending or not M.current then return end
+      restyle_pending = true
+      vim.schedule(function()
+        restyle_pending = false
+        M.restyle()
+      end)
+    end,
   })
   -- Plugin updates can change what a theme produces: start the cache afresh.
   vim.api.nvim_create_autocmd('User', {

@@ -14,5 +14,10 @@ return {
     -- :checkhealth czernous exists to look programs up; it only runs on demand.
     { file = 'lua/czernous/health.lua', call = 'vim.fn.executable', reason = 'on-demand health report' },
     { file = 'lua/czernous/health.lua', call = 'vim.fn.exepath', reason = 'on-demand health report' },
+    -- conform.nvim checks the one formatter format.lua has already located; it is
+    -- given an absolute path, so nothing is searched for on $PATH. (The check
+    -- format_does_not_search_path guards that.)
+    { file = 'lua/czernous/format.lua', call = 'vim.fn.executable', reason = 'conform verifying an absolute path' },
+    { file = 'lua/czernous/format.lua', call = 'vim.fn.exepath', reason = 'conform resolving an absolute path' },
   },
 }

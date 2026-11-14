@@ -17,8 +17,15 @@ local config = {
   -- -- the same formatter engine -- that file. Found per project once the
   -- server is up; nothing is hard-coded.
   on_init = function(client)
-    local profile = client.root_dir and require('czernous.format').eclipse_profile(client.root_dir)
-    if not profile then return end
+    local format = require('czernous.format')
+    local profile = client.root_dir and format.eclipse_profile(client.root_dir)
+    if not profile then
+      if client.root_dir and vim.uv.fs_stat(client.root_dir .. '/gradlew') and format.uses_spotless(client.root_dir) then
+        vim.notify('This project formats Java with Spotless but has no Eclipse formatter file, so <leader>f uses '
+          .. 'the language server\'s default style. Use <leader>F for the project\'s exact formatting.', vim.log.levels.INFO)
+      end
+      return
+    end
     client.settings = vim.tbl_deep_extend('force', client.settings or {}, {
       java = { format = { settings = { url = vim.uri_from_fname(profile) } } },
     })

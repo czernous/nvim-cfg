@@ -44,6 +44,9 @@ local function git_part(buf)
 end
 
 local function problems_part(buf)
+  -- Neovim's diagnostics module costs ~1 ms to load; before it has been loaded
+  -- (by the language-server setup, after the first screen) there is nothing to count.
+  if not package.loaded['vim.diagnostic'] then return '' end
   local counts = vim.diagnostic.count(buf)
   local severity = vim.diagnostic.severity
   local out = {}
@@ -65,7 +68,7 @@ function M.update()
   if vim.api.nvim_win_get_config(0).relative ~= '' then return end
   local buf = vim.api.nvim_get_current_buf()
   local filetype = vim.bo[buf].filetype
-  if filetype == 'czstart' then -- the start screen: nothing to report yet
+  if vim.b[buf].czernous_start then -- the start screen: nothing to report yet
     if vim.o.statusline ~= ' ' then vim.o.statusline = ' ' end
     return
   end

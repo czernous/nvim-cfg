@@ -129,10 +129,12 @@ end
 ---------------------------------------------------------------------------
 ---@param name string
 ---@param fn fun(): boolean, string?
----@param opts? { early?: boolean } early = run before the language checks, while the
----   machine is still quiet (timing checks: language servers started later skew them)
+---@param opts? { early?: boolean, late?: boolean }
+---   early = run before the language checks, while the machine is still quiet
+---           (timing checks: language servers started later skew them)
+---   late  = run after every other check (checks that judge what the whole run did)
 function check.global(name, fn, opts)
-  table.insert(check.globals, { name = name, fn = fn, early = opts and opts.early or false })
+  table.insert(check.globals, { name = name, fn = fn, early = opts and opts.early or false, late = opts and opts.late or false })
 end
 
 ---@param spec {name:string, file:string, server:string, exe:string, timeout_ms?:integer}
@@ -606,13 +608,26 @@ check.global('polarity_follows_background', function()
     ('light bg -> %s; after use(dark) -> %s (warned=%s); dark bg -> %s; started on %s'):format(tostring(light), tostring(still_light), tostring(warned), tostring(dark), tostring(start))
 end)
 
+-- Transparency is all-or-nothing in BOTH directions: switched off, every surface
+-- (editor, popups AND their borders, menus, picker, status line) is solid again.
 check.global('toggle_restores_bg', function()
   local theme = require('czernous.theme')
+  pcall(require, 'telescope'); pcall(require, 'blink.cmp'); pcall(require, 'which-key'); vim.wait(200)
+  local surfaces = { 'Normal', 'NormalFloat', 'FloatBorder', 'Pmenu', 'StatusLine', 'TelescopeNormal', 'TelescopeBorder',
+    'TelescopePromptNormal', 'TelescopePromptBorder', 'BlinkCmpMenu', 'BlinkCmpMenuBorder', 'BlinkCmpDoc', 'BlinkCmpDocBorder', 'WhichKeyNormal', 'WhichKeyBorder' }
+  local function state()
+    local solid, clear = {}, {}
+    for _, name in ipairs(surfaces) do
+      if hl(name).bg then solid[#solid + 1] = name else clear[#clear + 1] = name end
+    end
+    return solid, clear
+  end
   theme.toggle_transparency()
-  local opaque = hl('Normal').bg
+  local _, clear_when_solid = state()
   theme.toggle_transparency()
-  local again = hl('Normal').bg
-  return opaque ~= nil and again == nil, ('after toggle bg=%s, after 2nd toggle bg=%s'):format(tostring(opaque), tostring(again))
+  local solid_when_transparent = state()
+  return #clear_when_solid == 0 and #solid_when_transparent == 0,
+    ('switched off, still see-through: [%s]; switched back on, still solid: [%s]'):format(table.concat(clear_when_solid, ', '), table.concat(solid_when_transparent, ', '))
 end)
 
 -- The computed highlights are cached; a cached start must look exactly like a fresh one
@@ -794,6 +809,8 @@ local function scan(patterns)
 end
 
 -- No blocking calls at startup or on hot paths (each can cost ~100ms on slow $PATHs).
+-- Runs LAST: it judges every call config code made during the whole run, including
+-- what the formatting, statusline and start-screen checks exercised.
 check.global('no_blocking_calls', function()
   vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua')
   local buf = vim.api.nvim_get_current_buf()
@@ -836,7 +853,7 @@ check.global('no_blocking_calls', function()
     end
   end
   return #bad == 0, table.concat(bad, ', ')
-end)
+end, { late = true })
 
 check.global('no_global_writes', function()
   local bad = {}
@@ -1123,7 +1140,7 @@ end)
 check.global('start_screen', function()
   local function run(args)
     local cmd = { vim.v.progpath, '--headless', '-n', '--cmd',
-      "autocmd VimEnter * ++once lua vim.defer_fn(function() local l = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '|') io.stdout:write('SCREEN ft=' .. vim.bo.filetype .. ' mod=' .. tostring(vim.bo.modified) .. ' text=' .. l:gsub('%s+', ' '):sub(1, 900)) vim.cmd('qa!') end, 150)" }
+      "autocmd VimEnter * ++once lua vim.defer_fn(function() local l = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '|') io.stdout:write('SCREEN ft=' .. (vim.b.czernous_start and 'czstart' or vim.bo.filetype) .. ' mod=' .. tostring(vim.bo.modified) .. ' text=' .. l:gsub('%s+', ' '):sub(1, 900)) vim.cmd('qa!') end, 150)" }
     vim.list_extend(cmd, args)
     local r = vim.system(cmd, { text = true, cwd = root }):wait(30000)
     return (r.stdout or '') .. (r.stderr or '')
@@ -1416,7 +1433,7 @@ end)
 -- The start screen's bare look must not leak into other windows.
 check.global('start_screen_does_not_change_defaults', function()
   local out = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
-    "autocmd VimEnter * ++once lua vim.defer_fn(function() local on_start = vim.bo.filetype vim.cmd('split') vim.cmd('enew') io.stdout:write(('START=%s global: number=%s cursorline=%s | new window: number=%s cursorline=%s signcolumn=%s'):format(on_start, tostring(vim.go.number), tostring(vim.go.cursorline), tostring(vim.wo.number), tostring(vim.wo.cursorline), vim.wo.signcolumn)) vim.cmd('qa!') end, 200)" },
+    "autocmd VimEnter * ++once lua vim.defer_fn(function() local on_start = vim.b.czernous_start and 'czstart' or vim.bo.filetype vim.cmd('split') vim.cmd('enew') io.stdout:write(('START=%s global: number=%s cursorline=%s | new window: number=%s cursorline=%s signcolumn=%s'):format(on_start, tostring(vim.go.number), tostring(vim.go.cursorline), tostring(vim.wo.number), tostring(vim.wo.cursorline), vim.wo.signcolumn)) vim.cmd('qa!') end, 200)" },
     { text = true, cwd = root }):wait(30000)
   local text = (out.stdout or '') .. (out.stderr or '')
   local ok = text:find('START=czstart') and text:find('global: number=true cursorline=true') and text:find('new window: number=true cursorline=true signcolumn=yes')
@@ -1508,6 +1525,80 @@ check.global('health_lists_tools', function()
   local mason_ok = vim.fn.executable(vim.fn.stdpath('data') .. '/mason/bin/lua-language-server') == 0 or text:find('OK[^\n]*lua%-language%-server')
   local ok = text:find('ERROR[^\n]*ripgrep') and text:find('OK[^\n]*git') and mason_ok and not text:find('stack traceback')
   return ok ~= nil, text:gsub('\n', ' | '):sub(1, 300)
+end)
+
+---------------------------------------------------------------------------
+-- Review fixes (stage 2a part 2)
+---------------------------------------------------------------------------
+-- <leader>f must not search $PATH on every press (each miss ~100 ms on slow PATHs):
+-- programs are located once, in the background, and remembered.
+check.global('format_does_not_search_path', function()
+  local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p')
+  vim.fn.writefile({ 'x = 1' }, dir .. '/f.py')
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/f.py')
+  local fmt = require('czernous.format')
+  local function searches()
+    local n = 0
+    for name, count in pairs(check.exe_calls) do if name:sub(1, 1) ~= '/' then n = n + count end end
+    return n
+  end
+  count_warnings(function() fmt.format(); vim.wait(2500) end) -- first press: background lookup
+  local before = searches()
+  local t0 = vim.uv.hrtime()
+  count_warnings(function() fmt.format() end)                 -- later presses: nothing to look up
+  local blocked_ms = (vim.uv.hrtime() - t0) / 1e6
+  vim.wait(300)
+  return searches() == before and blocked_ms < 30, ('PATH searches on a repeat press: %d; blocked for %.0f ms'):format(searches() - before, blocked_ms)
+end)
+
+check.global('clipboard_fallback_enabled', function()
+  local disabled = require('lazy.core.config').options.performance.rtp.disabled_plugins
+  return not vim.tbl_contains(disabled, 'osc52'), 'the built-in OSC 52 clipboard (copy through the terminal, no tool needed) is disabled'
+end)
+
+check.global('statusline_does_not_load_diagnostics_at_startup', function()
+  local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+    "autocmd VimEnter * ++once lua io.stdout:write('DIAG=' .. tostring(package.loaded['vim.diagnostic'] ~= nil) .. ' STL=' .. tostring(vim.o.statusline ~= '')) vim.cmd('qa!')" },
+    { text = true, cwd = root }):wait(30000)
+  local out = (r.stdout or '') .. (r.stderr or '')
+  return out:find('DIAG=false STL=true') ~= nil, out:sub(1, 120)
+end)
+
+-- A theme that fails to load (plugin missing after an offline first start) must
+-- not take the rest of the config down with it.
+check.global('theme_failure_does_not_stop_startup', function()
+  local cache = vim.fn.tempname(); vim.fn.mkdir(cache, 'p') -- empty: the theme has to be built
+  local r = vim.system({ vim.v.progpath, '--headless', '-n',
+    '--cmd', "lua package.preload['catppuccin'] = function() error('simulated: theme plugin missing') end",
+    '--cmd', "autocmd VimEnter * ++once lua vim.defer_fn(function() io.stdout:write(('ALIVE stl=%s start=%s lsp=%s'):format(tostring(vim.o.statusline ~= ''), tostring(vim.b.czernous_start == true), tostring(package.loaded['czernous.lsp'] ~= nil))) vim.cmd('qa!') end, 400)" },
+    { text = true, cwd = root, env = { XDG_CACHE_HOME = cache } }):wait(30000)
+  local out = (r.stdout or '') .. (r.stderr or '')
+  return out:find('ALIVE stl=true start=true lsp=true') ~= nil, out:gsub('\n', ' | '):sub(1, 260)
+end)
+
+check.global('start_screen_respects_what_was_asked_for', function()
+  -- `nvim <folder> +Oil`: the explorer the user asked for stays
+  local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+    "autocmd VimEnter * ++once lua vim.defer_fn(function() io.stdout:write('FT=' .. vim.bo.filetype .. ' START=' .. tostring(vim.b.czernous_start == true) .. ' TS=' .. tostring(package.loaded['nvim-treesitter'] ~= nil)) vim.cmd('qa!') end, 600)",
+    '.', '+Oil' }, { text = true, cwd = root }):wait(30000)
+  local with_oil = (r.stdout or '') .. (r.stderr or '')
+  -- plain `nvim .`: start screen, and it does not drag syntax-highlighting plugins in
+  local r2 = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+    "autocmd VimEnter * ++once lua vim.defer_fn(function() io.stdout:write('FT=' .. vim.bo.filetype .. ' START=' .. tostring(vim.b.czernous_start == true) .. ' TS=' .. tostring(package.loaded['nvim-treesitter'] ~= nil)) vim.cmd('qa!') end, 600)",
+    '.' }, { text = true, cwd = root }):wait(30000)
+  local plain = (r2.stdout or '') .. (r2.stderr or '')
+  local ok = with_oil:find('FT=oil START=false') and plain:find('START=true TS=false')
+  return ok ~= nil, ('nvim . +Oil -> %s || nvim . -> %s'):format(with_oil:sub(1, 60), plain:sub(1, 60))
+end)
+
+check.global('hover_says_starting_not_missing', function()
+  -- a server that is enabled for the filetype but not attached yet: "still starting", not "install one"
+  local lsp = require('czernous.lsp')
+  if not lsp.describe_missing then return false, 'lsp.describe_missing missing' end
+  local starting = lsp.describe_missing('lua', true)
+  local missing = lsp.describe_missing('kotlin', false)
+  return starting:lower():find('starting', 1, true) ~= nil and missing:lower():find('no language server', 1, true) ~= nil,
+    ('starting -> %q; missing -> %q'):format(starting:sub(1, 60), missing:sub(1, 60))
 end)
 
 check.global('no_cfg_dir', function()
@@ -1635,7 +1726,10 @@ local function run()
     end
   end
   for _, g in ipairs(check.globals) do
-    if not g.early and wanted(g.name) then run_global(g) end
+    if not g.early and not g.late and wanted(g.name) then run_global(g) end
+  end
+  for _, g in ipairs(check.globals) do
+    if g.late and wanted(g.name) then run_global(g) end
   end
 
   -- Errors last, so everything above had a chance to produce them.

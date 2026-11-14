@@ -133,6 +133,36 @@ function M.refresh()
   end)
 end
 
+--- Is a language server for this buffer on its way (found and enabled, or
+--- starting) but not attached yet?
+function M.is_starting(buf)
+  if not M.ready then return true end -- servers are still being looked up
+  local filetype = vim.bo[buf].filetype
+  for _, name in ipairs(M.enabled) do
+    local config = vim.lsp.config[name]
+    if config and vim.tbl_contains(config.filetypes or {}, filetype) then
+      -- enabled for this filetype: attached and initialised yet?
+      local clients = vim.lsp.get_clients({ bufnr = buf, name = name })
+      if #clients == 0 or not clients[1].initialized then return true end
+    end
+  end
+  return false
+end
+
+--- What to tell the user when K has no language server to ask.
+function M.describe_missing(filetype, starting)
+  if starting then
+    return ('The language server for %s files is still starting; try again in a moment.'):format(filetype)
+  end
+  return ('No language server is running for %s files, so there is no documentation to show.\n'
+    .. 'Install one (it is picked up from $PATH) -- :checkhealth czernous lists what is missing.'):format(filetype)
+end
+
+-- Filetypes where Vim's own K (man pages, :help) is the right answer when no
+-- language server is attached.
+local builtin_lookup = { help = true, vim = true, man = true, sh = true, bash = true, zsh = true, fish = true,
+  c = true, cpp = true, make = true, [''] = true }
+
 --- K: documentation for the thing under the cursor. With no language server
 --- attached it says so (naming the language) instead of failing silently.
 function M.hover()
@@ -143,12 +173,12 @@ function M.hover()
     return
   end
   local filetype = vim.bo[buf].filetype
-  if filetype == 'help' or filetype == 'vim' or filetype == 'man' or filetype == '' then
+  local starting = M.is_starting(buf)
+  if builtin_lookup[filetype] and not starting then
     vim.cmd('normal! K') -- Vim's own lookup (help pages, man pages)
     return
   end
-  vim.notify(('No language server is running for %s files, so there is no documentation to show.\n'
-    .. 'Install one (it is picked up from $PATH) -- :checkhealth czernous lists what is missing.'):format(filetype), vim.log.levels.INFO)
+  vim.notify(M.describe_missing(filetype, starting), vim.log.levels.INFO)
 end
 
 return M

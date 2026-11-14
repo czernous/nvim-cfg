@@ -82,8 +82,10 @@ end
 ---@param started_on_folder boolean `nvim <folder>`: replace the folder listing
 function M.show(started_on_folder)
   if started_on_folder then
-    -- Neovim opened the folder in its file explorer; swap that for an empty buffer.
     local listing = vim.api.nvim_get_current_buf()
+    -- Only when Neovim is still showing that folder: if a command on the command
+    -- line opened something else (`nvim . +Oil`, a session), leave it alone.
+    if vim.bo[listing].buftype ~= '' or vim.fn.isdirectory(vim.api.nvim_buf_get_name(listing)) == 0 then return end
     vim.cmd('silent! %argdelete')
     vim.cmd('enew')
     pcall(vim.api.nvim_buf_delete, listing, { force = true })
@@ -97,7 +99,10 @@ function M.show(started_on_folder)
   vim.bo[buf].buftype = 'nofile'
   vim.bo[buf].bufhidden = 'wipe' -- gone as soon as another buffer takes its place
   vim.bo[buf].swapfile = false
-  vim.bo[buf].filetype = 'czstart'
+  -- Marked with a buffer variable, not a filetype: setting a filetype would wake
+  -- up the syntax-highlighting plugins for a screen that has no syntax.
+  vim.b[buf].czernous_start = true
+  vim.api.nvim_exec_autocmds('BufEnter', { buffer = buf, modeline = false }) -- lets the statusline notice
   -- A bare look for this window only (scope = 'local': the defaults that every
   -- other window gets must not change).
   local bare = { number = false, relativenumber = false, signcolumn = 'no', cursorline = false }
@@ -109,7 +114,14 @@ function M.show(started_on_folder)
   render(buf, win)
 
   local group = vim.api.nvim_create_augroup('czernous_start', { clear = true })
-  vim.api.nvim_create_autocmd('VimResized', { group = group, buffer = buf, callback = function() render(buf, win) end })
+  vim.api.nvim_create_autocmd('VimResized', {
+    group = group,
+    buffer = buf,
+    callback = function()
+      local shown_in = vim.fn.bufwinid(buf) -- wherever it is displayed now
+      if shown_in ~= -1 then render(buf, shown_in) end
+    end,
+  })
   -- Leaving the screen: give the window its normal look back.
   vim.api.nvim_create_autocmd('BufWipeout', {
     group = group,

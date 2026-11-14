@@ -23,7 +23,7 @@ Find any key from inside Neovim: `<leader>pk` (search keys by what they do), or 
 | Key | Before | Now | Why |
 |---|---|---|---|
 | `<leader>f` | LSP format / Neoformat; Spotless (~1 s) in Gradle projects | the project's formatter program if on `$PATH`, else the language server: always instant | Spotless via Gradle felt slow |
-| `K` | LSP hover; silent with no language server | documentation, or a message saying no server is running | failed silently |
+| `K` | LSP hover; in files with no language server, Vim's own lookup (man page) or nothing | documentation; if no server is attached: Vim's own lookup in help/shell/C/make files, otherwise a message saying no server is running (or that it is still starting) | failed silently in e.g. Kotlin files |
 | `<leader>pv` | built-in file explorer | the folder as an editable list (oil.nvim): edit lines to rename/move/delete, `:w` applies, `-` goes up, `q` closes | better, faster explorer |
 | `<leader>y`, `<leader>d` | normal mode only | also on a visual selection | the usual way to use them |
 | `<leader>u` | undotree plugin | Neovim's built-in undo tree | one plugin fewer |
@@ -37,6 +37,7 @@ Find any key from inside Neovim: `<leader>pk` (search keys by what they do), or 
 | `<C-k>` / `<C-j>` (quickfix next/previous, reversed) | `]q` / `[q` |
 | `<leader>k` / `<leader>j` (location list) | `]l` / `[l` |
 | `<leader>vd` | `<leader>ed` or `<C-w>d` |
+| `<leader>q` (problems to the location list) | `<leader>eq` (problems to the quickfix list) |
 | `gI`, `<leader>D` | `gri` (implementation), `grt` (type definition) |
 | `<C-h>` in insert mode | `<C-s>` (argument help; it also appears by itself while typing a call) |
 | `Y` remap | nothing: Neovim's `Y` already copies to the end of the line |

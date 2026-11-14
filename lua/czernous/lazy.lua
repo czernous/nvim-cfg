@@ -26,8 +26,9 @@ require('lazy').setup('czernous.plugins', {
   change_detection = { notify = false },
   performance = {
     rtp = {
-      -- Built-in plugins this config never uses.
-      disabled_plugins = { 'gzip', 'tarPlugin', 'tohtml', 'tutor', 'zipPlugin', 'rplugin', 'spellfile', 'osc52', 'netrwPlugin' },
+      -- Built-in plugins this config never uses. (osc52 stays on: it lets
+      -- <leader>y copy through the terminal itself when no clipboard tool is installed.)
+      disabled_plugins = { 'gzip', 'tarPlugin', 'tohtml', 'tutor', 'zipPlugin', 'rplugin', 'spellfile', 'netrwPlugin' },
     },
   },
 })

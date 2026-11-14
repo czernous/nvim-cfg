@@ -16,7 +16,9 @@ vim.api.nvim_create_autocmd('VimEnter', {
   once = true,
   callback = function()
     vim.schedule(function()
-      require('czernous.start').show(start_dir ~= nil)
+      -- separately: a problem drawing the start screen must not cost you language servers
+      local ok, err = pcall(require('czernous.start').show, start_dir ~= nil)
+      if not ok then vim.notify('Start screen: ' .. tostring(err), vim.log.levels.WARN) end
       require('czernous.lsp').setup()
     end)
   end,
