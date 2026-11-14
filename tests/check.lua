@@ -825,6 +825,11 @@ check.global('no_buffer_state_leaks', function()
   local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p')
   local dead = {}
   vim.cmd('silent! %bwipeout!')
+  -- Push buffer numbers past 5000 first, so "a key that is a dead buffer's number"
+  -- can't be confused with a position in an ordinary list (item 3 of 30, ...).
+  local burn = {}
+  repeat burn[#burn + 1] = vim.api.nvim_create_buf(false, true) until burn[#burn] >= 5000
+  for _, b in ipairs(burn) do vim.api.nvim_buf_delete(b, { force = true }) end
   for i = 1, 40 do
     local f = ('%s/f%d.lua'):format(dir, i)
     vim.fn.writefile({ 'local function add(a, b)', '  return a + b', 'end', '', 'print(add(1, 2))' }, f)
