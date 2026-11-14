@@ -66,7 +66,7 @@ M.groups = {
       { 'n', '<leader>pw', in_project('grep_string', 'Word under cursor'), desc = "Search for the word under the cursor (this file's project)" },
       { 'n', '<leader>pb', telescope('buffers'), desc = 'Find an open buffer' },
       { 'n', '<leader>pr', telescope('resume'), desc = 'Reopen the last search' },
-      { 'n', '<leader>pk', telescope('keymaps'), desc = 'Search all keys by what they do' },
+      { 'n', '<leader>pk', function() require('czernous.help').cheatsheet() end, desc = 'Key cheat sheet: search all keys by what they do' },
       { 'n', '<leader>ph', telescope('help_tags'), desc = 'Search the help' },
       { 'n', '<leader>?', telescope('oldfiles'), desc = 'Recently opened files' },
       { 'n', '<leader>/', function()
@@ -183,6 +183,16 @@ M.groups = {
     },
   },
   {
+    -- <leader>r... : run tests (see lua/czernous/test.lua). Output opens in a floating terminal; q closes it.
+    name = 'Running tests',
+    keys = {
+      { 'n', '<leader>rt', function() require('czernous.test').run('nearest') end, desc = 'Run the test the cursor is in' },
+      { 'n', '<leader>rf', function() require('czernous.test').run('file') end, desc = "Run this file's tests" },
+      { 'n', '<leader>ra', function() require('czernous.test').run('all') end, desc = "Run all the project's tests" },
+      { 'n', '<leader>rl', function() require('czernous.test').run('last') end, desc = 'Run the last tests again' },
+    },
+  },
+  {
     name = 'Toggles',
     keys = {
       { 'n', '<leader>tT', function() require('czernous.theme').toggle_transparency() end, desc = 'Toggle the transparent background' },
@@ -272,7 +282,7 @@ M.prefixes = {
   { '<leader>t', group = 'Toggle / lists' },
   { '<leader>tt', group = 'Lists: problems, fixes, uses' },
   { '<leader>c', group = 'Code' },
-  { '<leader>r', group = 'Rename' },
+  { '<leader>r', group = 'Run tests / rename' },
   { '<leader>w', group = 'Whole project' },
   { 'gr', group = 'Language server (built-in)' },
 }

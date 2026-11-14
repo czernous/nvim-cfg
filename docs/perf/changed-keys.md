@@ -13,6 +13,9 @@ Find any key from inside Neovim: `<leader>pk` (search keys by what they do), or 
 | `<leader>b…` | debugging: `bb` breakpoint, `bB` conditional breakpoint, `bc` start / continue, `bn` next line, `bi` step into, `bo` step out, `bv` variables, `bs` call stack, `be` value under the cursor, `br` console, `bl` run the last session again, `bq` stop. Needs the language's debugger on `$PATH` (`dlv`, `lldb-dap` or `codelldb`, `netcoredbg`) |
 | `gm` in the explorer | move / rename by typing the destination path, like `mv` (folders are created; a folder as destination means "into it") |
 | `<leader>tg` | switch the explorer's git status letters off / on (two letters after a name, as `git status --short` prints them: staged, then unstaged; `?` new, `!` ignored). Explorer first open measured 20-33 ms with it, 22-29 ms without |
+| `<leader>r…` | run tests with the project's own command, output in a floating terminal (`q` closes, Enter on a `file:line` jumps there): `rt` the test under the cursor, `rf` this file, `ra` the whole project, `rl` the last run again. (`<leader>rn` is still rename) |
+| `<leader>pk` | now a cheat sheet: every key of this config plus the built-in keys worth knowing, as group / key / what it does; Enter presses the key |
+| `:help`, `<leader>ph` | the help page takes over the window you were in (no split); `q` goes back |
 | `<leader>ttx` / `<leader>ttd` / `<leader>ttq` / `<leader>ttr` | the keys Trouble used, kept as aliases: problems in all files / in this file / fixes here / where is this used |
 | `<leader>ed` | describe the problem under the cursor |
 | `<leader>eq` | send all problems to the quickfix list (`]q` / `[q` step through it) |

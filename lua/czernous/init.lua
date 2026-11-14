@@ -36,6 +36,18 @@ vim.api.nvim_create_autocmd('VimEnter', {
 
 -- Extended % matching (if/else/end, HTML tags...) is only useful inside a file:
 -- load it with the first one rather than at startup (~0.4 ms).
+-- Help pages take over the window you were in instead of splitting the screen;
+-- `q` goes back (lua/czernous/help.lua). Waits until the :help command is done.
+vim.api.nvim_create_autocmd('BufWinEnter', {
+  desc = 'Show help pages in the whole window',
+  callback = function(ev)
+    if vim.bo[ev.buf].buftype ~= 'help' then return end
+    vim.schedule(function()
+      if vim.api.nvim_buf_is_valid(ev.buf) then require('czernous.help').full_window(ev.buf) end
+    end)
+  end,
+})
+
 vim.api.nvim_create_autocmd({ 'BufReadPost', 'BufNewFile' }, {
   once = true,
   callback = function() vim.cmd.packadd('matchit') end,

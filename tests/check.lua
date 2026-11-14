@@ -1959,6 +1959,197 @@ check.global('debug_session_stops_at_breakpoint', function()
     :format(tostring(line), tostring(value), during:sub(1, 80), after:sub(1, 80))
 end)
 
+---------------------------------------------------------------------------
+-- Stage 2b: running tests (<leader>r...)
+---------------------------------------------------------------------------
+check.global('test_keys_present', function()
+  local missing = {}
+  for _, lhs in ipairs({ '<leader>rt', '<leader>rf', '<leader>ra', '<leader>rl', '<leader>rn' }) do
+    if not has_key('n', lhs) then missing[#missing + 1] = lhs end
+  end
+  return #missing == 0, 'missing: ' .. table.concat(missing, ' ')
+end)
+
+--- A throw-away project: { ['relative/path'] = { lines } }. Returns its folder.
+local function temp_project(files)
+  local dir = vim.uv.fs_realpath(vim.fn.tempname():match('^(.*)/')) .. '/czproj' .. vim.uv.hrtime()
+  for path, lines in pairs(files) do
+    vim.fn.mkdir(vim.fs.dirname(dir .. '/' .. path), 'p')
+    vim.fn.writefile(lines, dir .. '/' .. path)
+  end
+  return dir
+end
+
+-- The project's own test command is built for the test under the cursor, the
+-- file, and the whole project.
+check.global('test_commands_per_language', function()
+  local ok, test = pcall(require, 'czernous.test')
+  if not ok then return false, 'no czernous.test module' end
+  local cases = {
+    { parser = 'go', file = 'calc/calc_test.go', cursor = 4,
+      files = { ['go.mod'] = { 'module x', '', 'go 1.21' },
+        ['calc/calc_test.go'] = { 'package calc', 'import "testing"', 'func TestAdd(t *testing.T) {', '\tt.Log("a")', '}', 'func TestSub(t *testing.T) {', '}' } },
+      nearest = { 'go', 'test', '-v', '-run', '^TestAdd$', '.' }, nearest_cwd = 'calc',
+      file_cmd = { 'go', 'test', '-v', '-run', '^(TestAdd|TestSub)$', '.' },
+      all = { 'go', 'test', './...' }, all_cwd = '' },
+    { parser = 'rust', file = 'src/calc.rs', cursor = 3,
+      files = { ['Cargo.toml'] = { '[package]', 'name = "x"', 'version = "0.1.0"' },
+        ['src/calc.rs'] = { '#[test]', 'fn adds() {', '    assert_eq!(1 + 1, 2);', '}' } },
+      nearest = { 'cargo', 'test', 'adds' }, nearest_cwd = '',
+      file_cmd = { 'cargo', 'test', 'calc::' },
+      all = { 'cargo', 'test' }, all_cwd = '' },
+    { parser = 'java', file = 'app/src/test/java/com/x/CalcTest.java', cursor = 5,
+      files = { ['gradlew'] = { '#!/bin/sh' }, ['settings.gradle.kts'] = { '' },
+        ['app/src/test/java/com/x/CalcTest.java'] = { 'package com.x;', 'class CalcTest {', '  @Test', '  void adds() {', '    int a = 1;', '  }', '}' } },
+      nearest = { './gradlew', 'test', '--tests', 'com.x.CalcTest.adds' }, nearest_cwd = '',
+      file_cmd = { './gradlew', 'test', '--tests', 'com.x.CalcTest' },
+      all = { './gradlew', 'test' }, all_cwd = '' },
+    { parser = 'c_sharp', file = 'CalcTests.cs', cursor = 5,
+      files = { ['x.csproj'] = { '<Project/>' },
+        ['CalcTests.cs'] = { 'namespace X;', 'public class CalcTests {', '  [Fact]', '  public void Adds() {', '    var a = 1;', '  }', '}' } },
+      nearest = { 'dotnet', 'test', '--filter', 'FullyQualifiedName~CalcTests.Adds' }, nearest_cwd = '',
+      file_cmd = { 'dotnet', 'test', '--filter', 'FullyQualifiedName~CalcTests' },
+      all = { 'dotnet', 'test' }, all_cwd = '' },
+    { parser = 'typescript', file = 'src/calc.test.ts', cursor = 2,
+      files = { ['package.json'] = { '{}' }, ['bun.lock'] = { '' },
+        ['src/calc.test.ts'] = { "test('adds two', () => {", '  expect(1 + 1).toBe(2)', '})' } },
+      nearest = { 'bun', 'test', '{file}', '-t', 'adds two' }, nearest_cwd = '',
+      file_cmd = { 'bun', 'test', '{file}' },
+      all = { 'bun', 'test' }, all_cwd = '' },
+  }
+  local bad, ran = {}, 0
+  for _, case in ipairs(cases) do
+    if pcall(vim.treesitter.language.inspect, case.parser) then
+      ran = ran + 1
+      local dir = temp_project(case.files)
+      vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/' .. case.file)
+      vim.api.nvim_win_set_cursor(0, { case.cursor, 2 })
+      local function same(kind, want, want_cwd)
+        local got, why = test.command(kind)
+        local expected = vim.tbl_map(function(a) return (a:gsub('{file}', dir .. '/' .. case.file)) end, want)
+        local cwd = vim.fs.normalize(dir .. '/' .. want_cwd)
+        if not got or not vim.deep_equal(got.cmd, expected) or vim.fs.normalize(got.cwd) ~= cwd then
+          bad[#bad + 1] = ('%s %s: got %s in %s (%s)'):format(case.parser, kind, got and table.concat(got.cmd, ' ') or 'nothing',
+            got and got.cwd:sub(#dir + 1) or '-', tostring(why))
+        end
+      end
+      same('nearest', case.nearest, case.nearest_cwd)
+      same('file', case.file_cmd, case.nearest_cwd)
+      same('all', case.all, case.all_cwd)
+    end
+  end
+  -- a language with no known test command: nothing to run, and a reason
+  vim.cmd.edit(fixtures .. '/lua/init.lua')
+  local none, why = test.command('file')
+  if none or type(why) ~= 'string' then bad[#bad + 1] = 'lua: expected no command and a reason' end
+  vim.cmd('silent! %bwipeout!')
+  return #bad == 0 and ran > 0, ('%d languages checked; %s'):format(ran, table.concat(bad, ' | '))
+end)
+
+-- Tests run in a floating terminal: real output, `q` closes, the last run can be repeated,
+-- and a missing program is one message.
+check.global('test_run_shows_output_in_float', function()
+  local ok, test = pcall(require, 'czernous.test')
+  if not ok then return false, 'no czernous.test module' end
+  -- a Kotlin project whose `./gradlew` is a script that prints its arguments and fails
+  -- (Kotlin: no language server starts for it here, so nothing else is going on)
+  local dir = temp_project({ ['gradlew'] = { '#!/bin/sh', 'echo "ran: $*"', 'exit 3' }, ['src/test/kotlin/ATest.kt'] = { 'package x' } })
+  vim.fn.setfperm(dir .. '/gradlew', 'rwxr-xr-x')
+  local broken = temp_project({ ['gradlew'] = { '#!/bin/sh' }, ['src/test/kotlin/BTest.kt'] = { 'package x' } }) -- not executable
+  local function floats()
+    return vim.tbl_filter(function(w)
+      local config = vim.api.nvim_win_get_config(w)
+      return config.relative ~= '' and config.focusable -- not progress messages and the like
+    end, vim.api.nvim_list_wins())
+  end
+  local function float_text()
+    local w = floats()[1]
+    return w and table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(w), 0, -1, false), '\n') or ''
+  end
+  local result = {}
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/src/test/kotlin/ATest.kt')
+  local file_win = vim.api.nvim_get_current_win()
+
+  test.run('all')
+  vim.wait(8000, function() return float_text():find('ran: test', 1, true) ~= nil end, 50)
+  result.output_shown = float_text():find('ran: test', 1, true) ~= nil
+  vim.wait(3000, function() return vim.inspect(vim.api.nvim_win_get_config(floats()[1] or 0)):find('failed', 1, true) ~= nil end, 50)
+  result.says_failed = floats()[1] ~= nil and vim.inspect(vim.api.nvim_win_get_config(floats()[1])):find('failed', 1, true) ~= nil
+  vim.cmd('stopinsert')
+  vim.api.nvim_feedkeys('q', 'x', false)
+  vim.wait(200)
+  result.q_closes = #floats() == 0 and vim.api.nvim_get_current_win() == file_win
+
+  test.run('last')
+  vim.wait(8000, function() return float_text():find('ran: test', 1, true) ~= nil end, 50)
+  result.last_repeats = float_text():find('ran: test', 1, true) ~= nil
+  vim.cmd('stopinsert'); vim.api.nvim_feedkeys('q', 'x', false); vim.wait(200)
+
+  vim.cmd.edit(broken .. '/src/test/kotlin/BTest.kt')
+  local texts = messages_from(function() test.run('all') end, function(t) return #t > 0 end, 3000)
+  result.missing_program_is_one_message = #texts == 1 and texts[1]:find('gradlew', 1, true) ~= nil and #floats() == 0
+  vim.cmd('silent! %bwipeout!')
+  for _, good in pairs(result) do
+    if not good then return false, vim.inspect(result):gsub('%s+', ' ') .. ' ' .. vim.inspect(texts) end
+  end
+  return true, 'output shown, failure reported, q closes, last run repeats'
+end)
+
+---------------------------------------------------------------------------
+-- Stage 2b: help
+---------------------------------------------------------------------------
+-- <leader>pk is a cheat sheet built from the key registry (so it cannot go
+-- stale) plus the built-in keys worth knowing -- not Neovim's raw mapping dump.
+check.global('cheatsheet_lists_every_key', function()
+  local ok, help = pcall(require, 'czernous.help')
+  if not ok then return false, 'no czernous.help module' end
+  local listed = {}
+  for _, e in ipairs(help.entries()) do listed[e.lhs] = e end
+  local missing = {}
+  for _, key in ipairs(require('czernous.keymaps').all()) do
+    if not listed[key.lhs] then missing[#missing + 1] = key.lhs end
+  end
+  for _, builtin in ipairs({ 'grn', 'gcc', ']d' }) do
+    if not listed[builtin] then missing[#missing + 1] = builtin end
+  end
+  if #missing > 0 then return false, 'not in the cheat sheet: ' .. table.concat(missing, ' ') end
+  -- and the key opens it: a picker whose lines read "group  Space pf  what it does"
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua')
+  vim.api.nvim_feedkeys(vim.keycode('<leader>pk'), 'x', false)
+  local function results()
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.bo[buf].filetype == 'TelescopeResults' then return table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n') end
+    end
+    return ''
+  end
+  vim.wait(5000, function() return results():find('Space pf', 1, true) ~= nil end, 50)
+  local text = results()
+  pcall(function() require('telescope.actions').close(vim.api.nvim_get_current_buf()) end)
+  vim.cmd('stopinsert')
+  return text:find('Space pf', 1, true) ~= nil and text:find('Find files', 1, true) ~= nil and not text:find('<Plug>', 1, true),
+    'picker shows: ' .. text:sub(1, 200):gsub('\n', ' | ')
+end)
+
+-- :help takes over the window you were in (no split); q goes back to the file.
+check.global('help_uses_the_whole_window', function()
+  --- windows that hold a buffer on screen (popups such as progress messages don't count)
+  local function windows()
+    return #vim.tbl_filter(function(w) return vim.api.nvim_win_get_config(w).relative == '' end, vim.api.nvim_tabpage_list_wins(0))
+  end
+  vim.cmd('silent! %bwipeout!'); vim.cmd('silent! only'); vim.cmd.edit(fixtures .. '/lua/init.lua')
+  local file = vim.api.nvim_get_current_buf()
+  vim.cmd('help lua-guide')
+  vim.wait(1000, function() return windows() == 1 and vim.bo.buftype == 'help' end, 20)
+  local wins, is_help = windows(), vim.bo.buftype == 'help'
+  local at_topic = vim.api.nvim_get_current_line():find('lua-guide', 1, true) ~= nil
+  vim.api.nvim_feedkeys('q', 'x', false)
+  vim.wait(200)
+  local back = vim.api.nvim_get_current_buf() == file and windows() == 1
+  vim.cmd('silent! %bwipeout!')
+  return wins == 1 and is_help and at_topic and back,
+    ('windows while reading help: %d, help shown: %s, at the topic: %s, q went back: %s'):format(wins, tostring(is_help), tostring(at_topic), tostring(back))
+end)
+
 local function cursor_on_call(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   for i = #lines, 1, -1 do
