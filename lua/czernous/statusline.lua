@@ -1,6 +1,6 @@
 -- The statusline: one quiet line with what you need and nothing else.
 --
---   NORMAL  src/main.go [+]   main   E2 W1                      go   12:8
+--   NORMAL  src/main.go [+]    main   E2 W1                     go   12:8
 --   mode    file  modified    branch errors/warnings      filetype   line:column
 --
 -- Built in, no plugin. Costs nothing while you move around: the mode, branch and
@@ -37,7 +37,8 @@ end
 local function git_part(buf)
   local head = vim.b[buf].gitsigns_head
   if not head or head == '' then return '' end
-  return ('  %%#CzStlDim#%s%%#CzStlText#'):format(literal(head))
+  -- U+E0A0, the usual "git branch" symbol, so the name can't be read as part of the path
+  return ('   %%#CzStlDim#\238\130\160 %s%%#CzStlText#'):format(literal(head))
 end
 
 local function problems_part(buf)
@@ -59,6 +60,10 @@ function M.update()
   if vim.api.nvim_win_get_config(0).relative ~= '' then return end
   local buf = vim.api.nvim_get_current_buf()
   local filetype = vim.bo[buf].filetype
+  if filetype == 'czstart' then -- the start screen: nothing to report yet
+    if vim.o.statusline ~= ' ' then vim.o.statusline = ' ' end
+    return
+  end
   local line = table.concat({
     mode_part(),
     ' %<%f%( %#CzStlDim#%m%r%#CzStlText#%)', -- file name, [+] if modified, [RO] if read-only

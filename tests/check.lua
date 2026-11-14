@@ -1210,6 +1210,34 @@ check.global('statusline_native', function()
   return ok ~= nil, 'rendered: [' .. text .. '] (want mode, file name, filetype, 2:4)'
 end)
 
+-- On a normal (cached-theme) start the statusline must already have its real
+-- colours: text = the theme's text colour, branch/filetype = its comment colour.
+check.global('statusline_colours_at_startup', function()
+  local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+    "autocmd VimEnter * ++once lua local function fg(n) return tostring(vim.api.nvim_get_hl(0, { name = n, link = false }).fg) end io.stdout:write(('COLOURS normal=%s text=%s comment=%s dim=%s cached=%s'):format(fg('Normal'), fg('CzStlText'), fg('Comment'), fg('CzStlDim'), tostring(package.loaded['catppuccin'] == nil))) vim.cmd('qa!')" },
+    { text = true, cwd = root }):wait(30000)
+  local out = (r.stdout or '') .. (r.stderr or '')
+  local normal, text, comment, dim, cached = out:match('normal=(%S+) text=(%S+) comment=(%S+) dim=(%S+) cached=(%S+)')
+  if not normal then return false, 'no answer: ' .. out:sub(1, 200) end
+  return normal ~= 'nil' and text == normal and dim == comment and cached == 'true',
+    ('Normal fg=%s, statusline text=%s; Comment fg=%s, statusline dim=%s; started from cache=%s'):format(normal, text, comment, dim, cached)
+end)
+
+-- Start screen: shown only when Neovim starts with no file; gone once you open one.
+check.global('start_screen', function()
+  local function run(args)
+    local cmd = { vim.v.progpath, '--headless', '-n', '--cmd',
+      "autocmd VimEnter * ++once lua vim.defer_fn(function() local l = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '|') io.stdout:write('SCREEN ft=' .. vim.bo.filetype .. ' mod=' .. tostring(vim.bo.modified) .. ' text=' .. l:gsub('%s+', ' '):sub(1, 900)) vim.cmd('qa!') end, 150)" }
+    vim.list_extend(cmd, args)
+    local r = vim.system(cmd, { text = true, cwd = root }):wait(30000)
+    return (r.stdout or '') .. (r.stderr or '')
+  end
+  local empty, with_file = run({}), run({ fixtures .. '/lua/init.lua' })
+  local shown = empty:find('ft=czstart') and empty:find('ready in [%d%.]+ ms') and empty:find('find file', 1, true) and empty:find('mod=false')
+  local absent = with_file:find('ft=lua') and not with_file:find('ready in')
+  return (shown and absent) and true or false, ('no file: %s || with file: %s'):format(empty:sub(1, 160), with_file:sub(1, 80))
+end)
+
 check.global('statusline_shows_problems_and_branch', function()
   -- a file outside any git repo, so the branch shown is the one set below
   local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p')

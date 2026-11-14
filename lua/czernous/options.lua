@@ -18,3 +18,6 @@ vim.opt.signcolumn = 'yes'
 -- One border style for every popup (hover, completion docs, pickers...). With a
 -- transparent UI the border is what separates a popup from the code behind it.
 vim.opt.winborder = 'rounded'
+
+-- No `~` markers on the empty lines after the end of a file.
+vim.opt.fillchars:append({ eob = ' ' })
