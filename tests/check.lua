@@ -49,8 +49,7 @@ local function config_caller()
 end
 
 local function record_blocking(name)
-  local phase = (vim.v.vim_did_enter == 0 and 'startup') or (check.hot and 'hot path') or nil
-  if not phase then return end
+  local phase = (vim.v.vim_did_enter == 0 and 'startup') or (check.hot and 'hot path') or 'after startup'
   local src = config_caller()
   if src then table.insert(check.blocking, { name = name, src = src, phase = phase }) end
 end
@@ -745,7 +744,18 @@ check.global('bench_reports_instability', function()
   local far = { startup_ms = { median = 120 }, open_ms = { go = { median = 50 } } }
   local near = { startup_ms = { median = 105 }, open_ms = { go = { median = 52 } } }
   local s1, s2 = bench.compare(a, far), bench.compare(a, near)
-  return s1 == false and s2 == true, ('20%% apart -> stable=%s (want false); 5%% apart -> stable=%s (want true)'):format(tostring(s1), tostring(s2))
+  -- Real results carry min/median/max: stability is judged on the fastest run.
+  local m1 = { startup_ms = { min = 100, median = 140, max = 200 } }
+  local m_far = { startup_ms = { min = 125, median = 141, max = 150 } }
+  local m_near = { startup_ms = { min = 104, median = 190, max = 300 } }
+  local s3, s4 = bench.compare(m1, m_far), bench.compare(m1, m_near)
+  -- A measure that failed in either pass is a disagreement, never silently "stable".
+  local ok_pass = { completion_ms = { lua = { min = 70, median = 76, max = 90 } } }
+  local err_pass = { completion_ms = { lua = { error = 'menu never appeared' } } }
+  local s5, s6, s7 = bench.compare(err_pass, ok_pass), bench.compare(ok_pass, err_pass), bench.compare(err_pass, err_pass)
+  local good = s1 == false and s2 == true and s3 == false and s4 == true and s5 == false and s6 == false and s7 == false
+  return good, ('medians 20%%/5%% apart -> %s/%s (want false/true); mins 20%%/4%% apart -> %s/%s (want false/true); error in one/other/both passes -> %s/%s/%s (want all false)')
+    :format(tostring(s1), tostring(s2), tostring(s3), tostring(s4), tostring(s5), tostring(s6), tostring(s7))
 end)
 
 ---------------------------------------------------------------------------
@@ -786,13 +796,37 @@ check.global('no_blocking_calls', function()
   end
   pcall(vim.api.nvim_eval_statusline, vim.o.statusline, {})
   check.hot = false
-  local bad = {}
-  for _, b in ipairs(check.blocking) do
-    local allowed = false
-    for _, a in ipairs(allow.blocking) do
-      if b.src:find(a.file, 1, true) and b.name:find(a.call, 1, true) then allowed = true end
+  local function allowed(src, call)
+    for _, entry in ipairs(allow.blocking) do
+      if src:find(entry.file, 1, true) and call == entry.call then return true end
     end
-    if not allowed then bad[#bad + 1] = ('%s at %s (%s)'):format(b.name, b.src, b.phase) end
+    return false
+  end
+  local bad, seen = {}, {}
+  -- 1. Calls seen while running (startup, hot paths, and everything after: lazily
+  --    loaded plugin setup, FileType/LspAttach callbacks, ...).
+  for _, c in ipairs(check.blocking) do
+    local call = c.name:match('^[^(]+') -- 'vim.fn.executable(rg)' -> 'vim.fn.executable'
+    local id = call .. '@' .. c.src
+    if not allowed(c.src, call) and not seen[id] then
+      seen[id] = true
+      bad[#bad + 1] = ('%s at %s (%s)'):format(c.name, c.src, c.phase)
+    end
+  end
+  -- 2. Calls present in the source, whether or not this run reached them, including
+  --    spellings the recorder cannot see (vim.call, nvim_call_function, jobwait, :wait).
+  local spellings = {
+    ['vim.fn.executable'] = { 'fn%.executable%(' }, ['vim.fn.exepath'] = { 'fn%.exepath%(' },
+    ['vim.fn.system'] = { 'fn%.system%(' }, ['vim.fn.systemlist'] = { 'fn%.systemlist%(' },
+    ['io.popen'] = { 'io%.popen%(' }, ['os.execute'] = { 'os%.execute%(' },
+    ['vim.system():wait()'] = { '%):wait%(', ':wait%(%d' }, ['vim.fn.jobwait'] = { 'jobwait%(' },
+    ['vim.call'] = { 'vim%.call%(' }, ['nvim_call_function'] = { 'nvim_call_function%(' },
+  }
+  for call, patterns in pairs(spellings) do
+    for _, hit in ipairs(scan(patterns)) do
+      local file = hit:match('^[^:]+')
+      if not allowed(file, call) then bad[#bad + 1] = call .. ' in ' .. hit end
+    end
   end
   return #bad == 0, table.concat(bad, ', ')
 end)
@@ -834,6 +868,7 @@ end)
 -- and keymap callbacks, their upvalues) for tables still keyed by a dead buffer.
 check.global('no_buffer_state_leaks', function()
   local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p')
+  vim.fn.system({ 'git', 'init', '-q', dir }) -- so git integration attaches too
   local dead = {}
   vim.cmd('silent! %bwipeout!')
   -- Push buffer numbers past 5000 first, so "a key that is a dead buffer's number"
@@ -849,6 +884,12 @@ check.global('no_buffer_state_leaks', function()
     -- Neovim's LSP startup touches the buffer on the next tick (and errors if it is
     -- already gone); give it that tick, as any human-paced use would.
     vim.wait(30)
+    -- The first few buffers wait for the language server and git signs, so the
+    -- LspAttach / on_attach code paths (and their per-buffer state) run as well.
+    if i <= 4 then
+      vim.wait(6000, function() return #vim.lsp.get_clients({ bufnr = buf }) > 0 end, 50)
+      vim.wait(1500, function() return vim.b[buf].gitsigns_status_dict ~= nil end, 50)
+    end
     vim.api.nvim_win_set_cursor(0, { 2, 9 })
     vim.api.nvim_feedkeys(vim.keycode('<C-space><C-space><Esc>'), 'x', false)
     vim.cmd('doautocmd CursorMoved'); vim.cmd('doautocmd InsertEnter'); vim.cmd('doautocmd InsertLeave')
@@ -858,16 +899,23 @@ check.global('no_buffer_state_leaks', function()
   vim.wait(300)
   collectgarbage('collect'); collectgarbage('collect')
 
+  -- Never descend into Neovim's or plugins' own tables (reachable when config code
+  -- keeps e.g. `local lsp = vim.lsp`): their state is not ours to judge.
   local seen, leaks = {}, {}
+  seen[_G], seen[vim], seen[dead] = true, true, true
+  for name, mod in pairs(package.loaded) do
+    if type(mod) == 'table' and not (type(name) == 'string' and name:match('^czernous')) then seen[mod] = true end
+  end
+  for _, field in pairs(vim) do if type(field) == 'table' then seen[field] = true end end
   local function walk(v, path, depth)
     if depth > 12 or seen[v] then return end
     local t = type(v)
     if t == 'table' then
       seen[v] = true
-      if getmetatable(v) and getmetatable(v).__mode then return end -- weak tables free themselves
+      -- Weak tables are NOT exempt: number keys are never collected from them.
       local hits = 0
       for k, val in pairs(v) do
-        if type(k) == 'number' and dead[k] and type(val) ~= 'boolean' then hits = hits + 1 end
+        if type(k) == 'number' and dead[k] then hits = hits + 1 end
         if type(val) == 'table' or type(val) == 'function' then walk(val, path .. '.' .. tostring(k), depth + 1) end
       end
       if hits >= 5 then leaks[#leaks + 1] = ('%s holds %d entries for wiped buffers'):format(path, hits) end
@@ -890,7 +938,7 @@ check.global('no_buffer_state_leaks', function()
   for _, au in ipairs(vim.api.nvim_get_autocmds({})) do
     if type(au.callback) == 'function' then walk(au.callback, 'autocmd ' .. au.event, 0) end
   end
-  for _, mode in ipairs({ 'n', 'x', 'i', 'o' }) do
+  for _, mode in ipairs({ 'n', 'x', 's', 'i', 'o', 'c', 't' }) do
     for _, km in ipairs(vim.api.nvim_get_keymap(mode)) do
       if type(km.callback) == 'function' then walk(km.callback, 'keymap ' .. km.lhs, 0) end
     end

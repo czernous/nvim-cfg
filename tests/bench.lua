@@ -1,9 +1,12 @@
 -- Benchmarks for this config. Run via ./tests/bench.sh (see its header).
 --
--- "Measure, then say the number": every figure is a median of N runs with its
--- min-max spread, and a result is only called stable when two whole passes
--- agree within 15%. Allocation per event is the exact instrument for hot paths
--- (bytes of Lua memory per autocmd firing, GC stopped); timings are noisier.
+-- "Measure, then say the number": every timing is reported as min / median / max
+-- of N runs, from two whole passes. A measure is only quotable when the FASTEST
+-- run of both passes agrees within 15% (on a shared machine noise only adds time,
+-- so the minimum is the repeatable figure; medians and maxima show the spread and
+-- may differ more). A measure that failed in either pass is never "stable".
+-- Allocation per event is the exact instrument for hot paths (bytes of Lua
+-- memory per autocmd firing, GC stopped).
 --
 -- This file is both the driver (`nvim -u NONE -l tests/bench.lua ...`) and the
 -- probe loaded inside each child Neovim (`--cmd "luafile tests/bench.lua"` with
@@ -29,7 +32,17 @@ end
 function M.compare(a, b)
   local bad = {}
   local function walk(x, y, path)
-    if type(x) ~= 'table' or type(y) ~= 'table' then return end
+    if type(x) ~= 'table' then return end
+    -- A measure that errored or is missing in either pass has no evidence behind it.
+    if x.error or (type(y) == 'table' and y.error) then
+      bad[#bad + 1] = ('%s: failed (%s)'):format(path, tostring(x.error or y.error))
+      return
+    end
+    if x.median and (type(y) ~= 'table' or not y.median) then
+      bad[#bad + 1] = path .. ': missing in one pass'
+      return
+    end
+    if type(y) ~= 'table' then return end
     if x.median and y.median then
       -- Timings: compare the fastest run. On a shared machine noise only ever adds
       -- time, so the minimum is the repeatable figure; medians are reported too.
@@ -44,6 +57,7 @@ function M.compare(a, b)
     for k, v in pairs(x) do walk(v, y[k], path == '' and tostring(k) or (path .. '.' .. tostring(k))) end
   end
   walk(a, b, '')
+  walk(b, a, '') -- and the other way round, for measures only the second pass has
   return #bad == 0, bad
 end
 
