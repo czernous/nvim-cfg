@@ -1,61 +1,52 @@
--- [[ Configure LSP ]]
--- Keymaps for LSP buffers are in keymaps.lua (group 'LSP').
-vim.api.nvim_create_autocmd('LspAttach', {
-  desc = 'LSP keymaps and :Format',
-  callback = function(event)
-    require('czernous.keymaps').lsp(event.buf)
-    vim.api.nvim_buf_create_user_command(event.buf, 'Format', function(_)
-      vim.lsp.buf.format()
-    end, { desc = 'Format current buffer with LSP' })
-  end,
-})
+-- Language servers.
+--
+-- A server starts only if its program is on $PATH: from the language's own
+-- toolchain (rustup, go install, dotnet tool) or a Nix devshell. Mason is a
+-- manual fallback (:MasonInstall <name>); its bin dir is at the END of $PATH,
+-- so a toolchain/devshell copy always wins. Language/SDK versions are chosen by
+-- the environment you start Neovim in, never here.
+--
+-- Adding a language: one line in M.servers  (lspconfig name = program name).
+-- Special settings for a server go in after/lsp/<name>.lua.
+-- Keys for LSP buffers are in keymaps.lua (group 'LSP').
 
--- Lua nvim-API types/completion are provided by lazydev.nvim (see plugins/lsp.lua),
--- which configures itself on the `lua` filetype -- no setup call needed here.
--- (Replaces the archived neodev.nvim.)
+local M = {}
 
--- nvim-cmp completion capabilities, broadcast to every server via the '*' config.
-local capabilities = require('cmp_nvim_lsp').default_capabilities()
-vim.lsp.config('*', {
-  capabilities = capabilities,
-})
+M.servers = {
+  gopls = 'gopls',
+  rust_analyzer = 'rust-analyzer',
+  lua_ls = 'lua-language-server',
+  jdtls = 'jdtls',
+  csharp_ls = 'csharp-ls',
+  vtsls = 'vtsls',
+}
 
--- Per-server overrides live here ONLY for special behavior (custom settings or
--- language extensions). Plain servers need nothing beyond being installed.
-vim.lsp.config('lua_ls', {
-  settings = {
-    Lua = {
-      workspace = { checkThirdParty = false },
-      telemetry = { enable = false },
-      -- NOTE: toggle below to ignore Lua_LS's noisy `missing-fields` warnings
-      -- diagnostics = { disable = { 'missing-fields' } },
-    },
-  },
-})
+--- Names of servers enabled at startup (filled by M.setup).
+M.enabled = {}
 
--- Rust + Leptos: use leptosfmt for formatting and ignore the `server` proc-macro.
-vim.lsp.config('rust_analyzer', {
-  settings = {
-    ['rust-analyzer'] = {
-      rustfmt = {
-        overrideCommand = { 'leptosfmt', '--stdin', '--rustfmt' },
-      },
-      procMacro = {
-        ignored = {
-          leptos_macro = {
-            -- "component",
-            'server',
-          },
-        },
-      },
-    },
-  },
-})
+function M.setup()
+  vim.api.nvim_create_autocmd('LspAttach', {
+    group = vim.api.nvim_create_augroup('czernous_lsp', { clear = true }),
+    desc = 'LSP keymaps and :Format',
+    callback = function(event)
+      require('czernous.keymaps').lsp(event.buf)
+      vim.api.nvim_buf_create_user_command(event.buf, 'Format', function()
+        vim.lsp.buf.format()
+      end, { desc = 'Format current buffer with LSP' })
+    end,
+  })
 
--- Mason: manages LSP server binaries. Servers it installs are enabled and
--- attached automatically (mason-lspconfig `automatic_enable`), so no per-server
--- boilerplate is needed. Add languages here for a fresh machine, or just run
--- `:MasonInstall <server>` later -- either way they attach with no extra code.
-require('mason-lspconfig').setup({
-  ensure_installed = { 'lua_ls', 'gopls' },
-})
+  -- nvim-cmp completion capabilities for every server.
+  vim.lsp.config('*', { capabilities = require('cmp_nvim_lsp').default_capabilities() })
+
+  M.enabled = {}
+  for name, exe in pairs(M.servers) do
+    if vim.fn.executable(exe) == 1 then
+      vim.lsp.enable(name)
+      table.insert(M.enabled, name)
+    end
+  end
+  table.sort(M.enabled)
+end
+
+return M

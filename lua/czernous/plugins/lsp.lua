@@ -4,8 +4,9 @@ return {
   {
     'neovim/nvim-lspconfig', -- provides default configs for each server
     dependencies = {
-      { 'mason-org/mason.nvim', opts = {} }, -- :Mason, installs servers
-      'mason-org/mason-lspconfig.nvim',
+      -- :Mason / :MasonInstall <server> -- manual fallback for machines without
+      -- the language toolchain. PATH = 'append': toolchain/devshell copies win.
+      { 'mason-org/mason.nvim', opts = { PATH = 'append' } },
       { 'j-hui/fidget.nvim', opts = {} }, -- LSP progress messages
     },
   },

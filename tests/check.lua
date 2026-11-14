@@ -185,6 +185,84 @@ check.global('incremental_selection_grows', function()
   return ok, ('after 1st: mode=%s size=%d; after 2nd: mode=%s size=%d; node=%s ft=%s map=%s'):format(mode1, size1, mode2, size2, n and n:type(), vim.bo.filetype, vim.fn.maparg('<C-Space>', 'n') ~= '')
 end)
 
+-- LSP: servers come from $PATH; Mason is only a fallback.
+check.global('mason_is_fallback_only', function()
+  if package.loaded['mason-lspconfig'] then return false, 'mason-lspconfig is loaded' end
+  local parts = vim.split(vim.env.PATH, ':', { plain = true })
+  local mason_bin = vim.fn.stdpath('data') .. '/mason/bin'
+  local idx
+  for i, p in ipairs(parts) do if p == mason_bin then idx = i end end
+  if not idx then return false, 'mason bin not on PATH' end
+  return idx == #parts, ('mason bin at PATH position %d of %d (want last)'):format(idx, #parts)
+end)
+
+check.global('enabled_matches_path', function()
+  local ok, lsp = pcall(require, 'czernous.lsp')
+  if not ok or type(lsp) ~= 'table' or not lsp.servers or not lsp.enabled then return false, 'czernous.lsp has no servers/enabled' end
+  local want, got = {}, {}
+  for name, exe in pairs(lsp.servers) do
+    if vim.fn.executable(exe) == 1 then want[#want + 1] = name end
+  end
+  for _, name in ipairs(lsp.enabled) do got[#got + 1] = name end
+  table.sort(want); table.sort(got)
+  return vim.deep_equal(want, got), ('want %s got %s'):format(vim.inspect(want), vim.inspect(got))
+end)
+
+check.global('leptosfmt_conditional', function()
+  local cfg = vim.lsp.config.rust_analyzer or {}
+  local ra = vim.tbl_get(cfg, 'settings', 'rust-analyzer') or {}
+  if not vim.tbl_get(ra, 'procMacro', 'ignored', 'leptos_macro') then return false, 'leptos procMacro settings missing' end
+  local has = vim.fn.executable('leptosfmt') == 1
+  local override = vim.tbl_get(ra, 'rustfmt', 'overrideCommand')
+  return (override ~= nil) == has, ('leptosfmt on PATH=%s, override set=%s'):format(has, override ~= nil)
+end)
+
+check.global('jdtls_no_hardcoded_runtime', function()
+  local hits = vim.fn.systemlist({ 'grep', '-rlE', '/usr/lib/jvm|\\.sdkman|jdk-?[0-9]', root .. '/lua', root .. '/after' })
+  hits = vim.tbl_filter(function(h) return h ~= '' and not h:find('No such file') end, hits)
+  if #hits > 0 then return false, 'hardcoded JDK path in ' .. table.concat(hits, ', ') end
+  local runtimes = vim.tbl_get(vim.lsp.config.jdtls or {}, 'settings', 'java', 'configuration', 'runtimes')
+  if vim.env.JAVA_HOME and vim.env.JAVA_HOME ~= '' then
+    return runtimes and runtimes[1].path == vim.env.JAVA_HOME, 'JAVA_HOME set but not used as runtime'
+  end
+  local cmd = (vim.lsp.config.jdtls or {}).cmd
+  return runtimes == nil and type(cmd) == 'function', 'runtimes set without JAVA_HOME, or cmd not overridden'
+end)
+
+-- A server binary that exists but crashes must not produce ERROR messages.
+check.global('broken_server_is_quiet', function()
+  local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p')
+  vim.fn.writefile({ '#!/bin/sh', 'exit 1' }, dir .. '/fake-ls'); vim.fn.setfperm(dir .. '/fake-ls', 'rwxr-xr-x')
+  local old = vim.env.PATH; vim.env.PATH = dir .. ':' .. old
+  local before = #check.errors
+  local warns = 0
+  local n = vim.notify
+  vim.notify = function(m, l, o) if l == vim.log.levels.WARN then warns = warns + 1 end return n(m, l, o) end
+  vim.lsp.config('fake_ls', { cmd = { 'fake-ls' }, filetypes = { 'czfake' } })
+  vim.lsp.enable('fake_ls')
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/x.czfake'); vim.bo.filetype = 'czfake'
+  vim.wait(3000)
+  vim.lsp.enable('fake_ls', false)
+  vim.notify = n; vim.env.PATH = old
+  local msgs = vim.api.nvim_exec2('messages', { output = true }).output
+  local errs = #check.errors - before
+  for line in msgs:gmatch('[^\n]+') do if line:match('^E%d+:') or line:match('^Error') then errs = errs + 1 end end
+  vim.cmd('messages clear')
+  return errs == 0 and warns <= 1, ('errors=%d warns=%d'):format(errs, warns)
+end)
+
+check.global('rootless_file_is_quiet', function()
+  local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p')
+  vim.fn.writefile({ 'package main', '', 'func main() {}' }, dir .. '/x.go')
+  local before = #check.errors
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/x.go')
+  vim.wait(5000)
+  local msgs = vim.api.nvim_exec2('messages', { output = true }).output
+  local bad = #check.errors - before
+  for line in msgs:gmatch('[^\n]+') do if line:match('^E%d+:') or line:match('^Error') then bad = bad + 1 end end
+  return bad == 0, msgs
+end)
+
 check.global('no_cfg_dir', function()
   return vim.fn.isdirectory(root .. '/lua/czernous/cfg') == 0, 'lua/czernous/cfg still exists'
 end)
