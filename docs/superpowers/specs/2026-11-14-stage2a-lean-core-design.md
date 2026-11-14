@@ -49,8 +49,12 @@ updates and Nix packaging have as little as possible to go wrong.
    - opening each fixture file until treesitter highlighting is active;
    - time until completion items appear after typing in a fixture (LSP attached).
    Baseline numbers are recorded before any change; the final numbers are compared.
-   **Targets:** startup ≤ 50 ms (today ~110 ms); no individual measure slower than its
-   baseline. Startup gets a check in `tests/check.sh` that fails above a
+   **Targets (revised 2026-11-14 after measuring; owner: "we can do 15 ms on this machine"):**
+   launch ≤ 15 ms wall clock on this machine with a non-AppImage Neovim (bare Neovim is
+   ~9–11 ms, so the config may add only ~4–6 ms: everything not needed for the first
+   screen loads after it); no individual measure slower than its baseline. Baseline:
+   `docs/perf/baseline.md` (launch 89 ms min, config overhead ~79 ms; AppImage adds a
+   further ~75 ms per launch — owner approved replacing it). Startup gets a check in `tests/check.sh` that fails above a
    generous ceiling (to catch big regressions like the 1 s one found in step 1, without
    being flaky).
 6. **Ready for Nix and updates.** The chosen plugin manager must work both (a) on plain
@@ -110,6 +114,10 @@ updates and Nix packaging have as little as possible to go wrong.
      (sets `'background'`); only palettes matching it can be active. A light palette can't
      be chosen while the terminal is dark and vice versa; if the terminal switches
      (`OptionSet background`), Neovim switches to the configured palette of the new polarity.
+   - **Transparency applies to the whole UI** (owner, 2026-11-14: solid popups next to a
+     transparent editor look wrong): floating windows, Telescope/picker, completion menu,
+     hover, which-key are transparent too, kept readable by a visible border. Supersedes
+     step 1's "popups keep a solid background".
    - 2a builds the palette mechanism + polarity rule; a theme picker UI is 2b.
 
 ## Decisions already made (owner)

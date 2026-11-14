@@ -669,6 +669,17 @@ check.global('search_keys_use_project_root', function()
   return #bad == 0, table.concat(bad, ', ')
 end)
 
+-- Benchmarks must refuse to call unstable numbers a result.
+check.global('bench_reports_instability', function()
+  local ok, bench = pcall(dofile, root .. '/tests/bench.lua')
+  if not ok or type(bench) ~= 'table' or not bench.compare then return false, 'tests/bench.lua has no compare(): ' .. tostring(bench) end
+  local a = { startup_ms = { median = 100 }, open_ms = { go = { median = 50 } } }
+  local far = { startup_ms = { median = 120 }, open_ms = { go = { median = 50 } } }
+  local near = { startup_ms = { median = 105 }, open_ms = { go = { median = 52 } } }
+  local s1, s2 = bench.compare(a, far), bench.compare(a, near)
+  return s1 == false and s2 == true, ('20%% apart -> stable=%s (want false); 5%% apart -> stable=%s (want true)'):format(tostring(s1), tostring(s2))
+end)
+
 check.global('no_cfg_dir', function()
   return vim.fn.isdirectory(root .. '/lua/czernous/cfg') == 0, 'lua/czernous/cfg still exists'
 end)
