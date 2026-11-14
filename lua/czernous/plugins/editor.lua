@@ -18,6 +18,10 @@ return {
     -- Loads on <leader>pv / :Oil. Plain names, no icons (no special font needed).
     'stevearc/oil.nvim',
     cmd = 'Oil',
+    config = function(_, opts)
+      require('oil').setup(opts)
+      require('czernous.explorer').setup() -- git status letters
+    end,
     opts = {
       default_file_explorer = false, -- `nvim <folder>` shows the start screen instead
       columns = {},

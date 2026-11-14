@@ -186,6 +186,7 @@ M.groups = {
     name = 'Toggles',
     keys = {
       { 'n', '<leader>tT', function() require('czernous.theme').toggle_transparency() end, desc = 'Toggle the transparent background' },
+      { 'n', '<leader>tg', function() require('czernous.explorer').toggle_git_status() end, desc = 'Toggle git status letters in the explorer (M modified, A added, ? new, ! ignored)' },
     },
   },
   {

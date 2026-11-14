@@ -1792,6 +1792,53 @@ check.global('explorer_moves_by_typing_destination', function()
   return true, 'moved, folders created, buffer followed'
 end)
 
+-- The explorer shows each entry's git status as plain letters at the end of
+-- its line (asked from git in the background); <leader>tg switches it off / on.
+check.global('explorer_shows_git_status', function()
+  if vim.fn.executable('git') == 0 then return 'skip', 'git not on PATH' end
+  local dir = vim.uv.fs_realpath(vim.fn.tempname():match('^(.*)/')) .. '/czgit' .. vim.uv.hrtime()
+  vim.fn.mkdir(dir .. '/sub', 'p')
+  for _, name in ipairs({ 'tracked.txt', 'clean.txt', 'sub/inner.txt' }) do vim.fn.writefile({ 'one' }, dir .. '/' .. name) end
+  vim.fn.writefile({ 'ignored.log' }, dir .. '/.gitignore')
+  local function git(...) return vim.system({ 'git', '-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@example.com', ... }, { text = true }):wait(20000) end
+  git('init', '-q'); git('add', '.'); git('commit', '-q', '-m', 'first')
+  vim.fn.writefile({ 'two' }, dir .. '/tracked.txt'); vim.fn.writefile({ 'two' }, dir .. '/sub/inner.txt')
+  vim.fn.writefile({ 'new' }, dir .. '/new.txt'); vim.fn.writefile({ 'x' }, dir .. '/ignored.log')
+  vim.fn.writefile({ 'staged' }, dir .. '/staged.txt'); git('add', 'staged.txt')
+
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/clean.txt')
+  vim.api.nvim_feedkeys(vim.keycode('<leader>pv'), 'x', false)
+  vim.wait(3000, function() return vim.bo.filetype == 'oil' end, 50)
+  local buf = vim.api.nvim_get_current_buf()
+  --- entry name -> the status text shown after it
+  local function shown()
+    local ns = vim.api.nvim_get_namespaces().czernous_explorer_git
+    local out = {}
+    if not ns then return out end
+    for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+      local line = vim.api.nvim_buf_get_lines(buf, mark[2], mark[2] + 1, false)[1] or ''
+      local text = ''
+      for _, chunk in ipairs(mark[4].virt_text or {}) do text = text .. chunk[1] end
+      out[(line:gsub('^/%d+ ', ''))] = vim.trim(text)
+    end
+    return out
+  end
+  vim.wait(8000, function() return next(shown()) ~= nil end, 50)
+  local on = shown()
+  vim.api.nvim_feedkeys(vim.keycode('<leader>tg'), 'x', false)
+  vim.wait(500)
+  local off = shown()
+  vim.api.nvim_feedkeys(vim.keycode('<leader>tg'), 'x', false)
+  vim.wait(8000, function() return next(shown()) ~= nil end, 50)
+  local on_again = shown()
+  vim.cmd('silent! %bwipeout!')
+  local plain = not vim.inspect(on):find('[\128-\255]')
+  local good = (on['tracked.txt'] or ''):find('M') and (on['new.txt'] or ''):find('?', 1, true) and (on['staged.txt'] or ''):find('A')
+    and (on['ignored.log'] or ''):find('!', 1, true) and (on['sub/'] or ''):find('M') and on['clean.txt'] == nil
+    and plain and next(off) == nil and (on_again['tracked.txt'] or ''):find('M')
+  return good and true or false, ('shown: %s | after toggling off: %s'):format(vim.inspect(on):gsub('%s+', ' '), vim.inspect(off):gsub('%s+', ' '))
+end)
+
 ---------------------------------------------------------------------------
 -- Stage 2b: debugging (<leader>b...)
 ---------------------------------------------------------------------------
