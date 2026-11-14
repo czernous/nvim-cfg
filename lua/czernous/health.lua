@@ -67,6 +67,17 @@ function M.check()
     end
   end
 
+  health.start('czernous: debuggers (<leader>b)')
+  for _, debugger in ipairs(require('czernous.debugging').debuggers) do
+    local program = first(debugger.programs)
+    local languages = table.concat(debugger.filetypes, ', ')
+    if program then
+      health.ok(('%s (%s): %s'):format(program, languages, vim.fn.exepath(program)))
+    else
+      health.info(('%s: not on $PATH (%s; only needed to debug %s)'):format(table.concat(debugger.programs, ' / '), debugger.what, languages))
+    end
+  end
+
   health.start('czernous: clipboard')
   if vim.fn.has('clipboard') == 1 then
     health.ok('a clipboard tool was found: <leader>y copies to the system clipboard')

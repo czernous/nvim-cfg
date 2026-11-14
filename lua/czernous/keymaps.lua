@@ -165,6 +165,24 @@ M.groups = {
     },
   },
   {
+    -- <leader>b... : debugging (see lua/czernous/debugging.lua). The debugger loads on the first of these.
+    name = 'Debugging',
+    keys = {
+      { 'n', '<leader>bb', function() require('czernous.debugging').toggle_breakpoint() end, desc = 'Breakpoint on this line: set / remove' },
+      { 'n', '<leader>bB', function() require('czernous.debugging').conditional_breakpoint() end, desc = 'Breakpoint that stops only when a condition holds' },
+      { 'n', '<leader>bc', function() require('czernous.debugging').continue() end, desc = 'Start debugging / continue to the next breakpoint' },
+      { 'n', '<leader>bn', function() require('czernous.debugging').step_over() end, desc = 'Debug: run to the next line' },
+      { 'n', '<leader>bi', function() require('czernous.debugging').step_into() end, desc = 'Debug: step into the call on this line' },
+      { 'n', '<leader>bo', function() require('czernous.debugging').step_out() end, desc = 'Debug: run until this function returns' },
+      { 'n', '<leader>bv', function() require('czernous.debugging').variables() end, desc = 'Debug: show the variables' },
+      { 'n', '<leader>bs', function() require('czernous.debugging').stack() end, desc = 'Debug: show the call stack' },
+      { { 'n', 'x' }, '<leader>be', function() require('czernous.debugging').value() end, desc = 'Debug: value of the thing under the cursor / selection' },
+      { 'n', '<leader>br', function() require('czernous.debugging').console() end, desc = 'Debug: open / close the console' },
+      { 'n', '<leader>bl', function() require('czernous.debugging').run_last() end, desc = 'Debug: start the previous session again' },
+      { 'n', '<leader>bq', function() require('czernous.debugging').stop() end, desc = 'Debug: stop' },
+    },
+  },
+  {
     name = 'Toggles',
     keys = {
       { 'n', '<leader>tT', function() require('czernous.theme').toggle_transparency() end, desc = 'Toggle the transparent background' },
@@ -249,6 +267,7 @@ M.prefixes = {
   { '<leader>h', group = 'Git change' },
   { '<leader>h', group = 'Git change', mode = 'x' },
   { '<leader>g', group = 'Git' },
+  { '<leader>b', group = 'Debug (breakpoints, stepping)' },
   { '<leader>t', group = 'Toggle / lists' },
   { '<leader>tt', group = 'Lists: problems, fixes, uses' },
   { '<leader>c', group = 'Code' },

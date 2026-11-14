@@ -2,7 +2,8 @@
 --
 --   NORMAL  src/main.go [+]   git:main   E2 W1 H3                go   12:8
 --   mode    file  modified    branch     problems          filetype   line:column
---   (E errors, W warnings, I information, H hints -- only the ones present;
+--   (`debug:stopped` / `debug:running` after the mode while debugging;
+--    E errors, W warnings, I information, H hints -- only the ones present;
 --    `fix` after them when a fix is offered on the cursor's line: <leader>ef)
 --
 -- Built in, no plugin. Costs nothing while you move around: the mode, branch and
@@ -44,6 +45,13 @@ local function git_part(buf)
   return ('   %%#CzStlDim#git:%s%%#CzStlText#'):format(literal(head))
 end
 
+local function debug_part()
+  -- only once the debugger has been used (it loads on the first <leader>b key)
+  local debugging = package.loaded['czernous.debugging']
+  local state = debugging and debugging.state()
+  return state and ('  %%#CzStlWarn#debug:%s%%#CzStlText#'):format(state) or ''
+end
+
 local function problems_part(buf)
   -- Neovim's diagnostics module costs ~1 ms to load; before it has been loaded
   -- (by the language-server setup, after the first screen) there is nothing to count.
@@ -80,6 +88,7 @@ function M.update()
   end
   local line = table.concat({
     mode_part(),
+    debug_part(),
     ' %<%f%( %#CzStlDim#%m%r%#CzStlText#%)', -- file name, [+] if modified, [RO] if read-only
     git_part(buf),
     vim.bo[buf].buftype == '' and problems_part(buf) or '',

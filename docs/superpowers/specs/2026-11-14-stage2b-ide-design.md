@@ -41,13 +41,13 @@ until its feature is first used, and that ready time stays within the launch bud
 - Starting a session with no adapter for the filetype says which program is missing.
 - `:checkhealth czernous` lists the adapters.
 
-## 3. Running tests (`<leader>t`)
+## 3. Running tests (`<leader>r`)
 
 - No plugin. `test.lua` builds the project's own test command for the file's language
   (Go `go test`, Rust `cargo test`, Java `./gradlew test --tests`, .NET `dotnet test
   --filter`, JS/TS `bun test`), for the test under the cursor (found with treesitter),
   the file, or the whole project, and runs it in a floating terminal: real output,
-  colours, `q` closes, `gF` on a `file:line` jumps there. `<leader>tl` repeats the last run.
+  colours, `q` closes, `gF` on a `file:line` jumps there. `<leader>rl` repeats the last run. (`<leader>t` stays for toggles; `<leader>rn` rename is unaffected.)
 
 ## 4. Help
 

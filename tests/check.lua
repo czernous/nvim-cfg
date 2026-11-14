@@ -1535,6 +1535,7 @@ check.global('health_lists_tools', function()
   -- servers installed through Mason must be reported as found even this early after startup
   local mason_ok = vim.fn.executable(vim.fn.stdpath('data') .. '/mason/bin/lua-language-server') == 0 or text:find('OK[^\n]*lua%-language%-server')
   local ok = text:find('ERROR[^\n]*ripgrep') and text:find('OK[^\n]*git') and mason_ok and not text:find('stack traceback')
+    and text:find('debuggers') and text:find('dlv') and text:find('netcoredbg') -- the debugger programs are listed too
   return ok ~= nil, text:gsub('\n', ' | '):sub(1, 300)
 end)
 
@@ -1750,6 +1751,167 @@ if vim.env.CHECK_JAVA_PROJECT and vim.env.CHECK_JAVA_PROJECT ~= '' then
 end
 
 --- Put the cursor on the last call of the fixture's `add`/`Add` function.
+-- In the explorer, `gm` moves the entry under the cursor to a typed path (like
+-- `mv`): missing folders are created, a folder as destination means "into it",
+-- and an open buffer of the file follows it.
+check.global('explorer_moves_by_typing_destination', function()
+  local dir = vim.uv.fs_realpath(vim.fn.tempname():match('^(.*)/')) .. '/czmove' .. vim.uv.hrtime()
+  vim.fn.mkdir(dir, 'p')
+  vim.fn.writefile({ 'a' }, dir .. '/a.txt'); vim.fn.writefile({ 'b' }, dir .. '/b.txt')
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/a.txt')
+  vim.api.nvim_feedkeys(vim.keycode('<leader>pv'), 'x', false)
+  vim.wait(3000, function() return vim.bo.filetype == 'oil' and vim.fn.search('b.txt', 'nw') > 0 end, 50)
+  local hint = vim.wo.winbar:find('gm', 1, true) ~= nil
+  local ask, asked = vim.ui.input, {}
+  local function move(name, answer)
+    vim.fn.search(name, 'w')
+    vim.ui.input = function(opts, done) asked[#asked + 1] = opts.default; done(answer) end
+    vim.api.nvim_feedkeys('gm', 'x', false)
+  end
+  local function exists(path) return vim.uv.fs_stat(path) ~= nil end
+  move('a.txt', dir .. '/deep/nested/renamed.txt')
+  vim.wait(5000, function() return exists(dir .. '/deep/nested/renamed.txt') end, 50)
+  vim.wait(300)
+  move('b.txt', dir .. '/deep/')
+  vim.wait(5000, function() return exists(dir .. '/deep/b.txt') end, 50)
+  vim.wait(300)
+  vim.ui.input = ask
+  local listing = vim.bo.filetype == 'oil' and table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '|') or '(not the explorer)'
+  local result = {
+    hint = hint,
+    prefilled = asked[1] == dir .. '/a.txt',
+    renamed = exists(dir .. '/deep/nested/renamed.txt') and not exists(dir .. '/a.txt'),
+    into_folder = exists(dir .. '/deep/b.txt') and not exists(dir .. '/b.txt'),
+    buffer_followed = vim.fn.bufnr(dir .. '/deep/nested/renamed.txt') ~= -1 and vim.fn.bufnr(dir .. '/a.txt') == -1,
+    listing_refreshed = listing:find('deep/', 1, true) ~= nil and not listing:find('a.txt', 1, true),
+  }
+  vim.cmd('silent! %bwipeout!')
+  for _, good in pairs(result) do
+    if not good then return false, vim.inspect(result):gsub('%s+', ' ') .. ' listing=' .. listing end
+  end
+  return true, 'moved, folders created, buffer followed'
+end)
+
+---------------------------------------------------------------------------
+-- Stage 2b: debugging (<leader>b...)
+---------------------------------------------------------------------------
+check.global('debug_keys_present', function()
+  local missing = {}
+  for _, lhs in ipairs({ '<leader>bb', '<leader>bB', '<leader>bc', '<leader>bn', '<leader>bi', '<leader>bo',
+    '<leader>bq', '<leader>bv', '<leader>be', '<leader>br', '<leader>bl' }) do
+    if not has_key('n', lhs) then missing[#missing + 1] = lhs end
+  end
+  return #missing == 0, 'missing: ' .. table.concat(missing, ' ')
+end)
+
+-- Breakpoint / "stopped here" markers are plain letters: the same in any font.
+check.global('debug_markers_are_plain_letters', function()
+  local ok, debug = pcall(require, 'czernous.debugging')
+  if not ok then return false, 'no czernous.debugging module' end
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/go/main.go')
+  local buf = vim.api.nvim_get_current_buf()
+  vim.api.nvim_win_set_cursor(0, { 5, 0 })
+  debug.toggle_breakpoint()
+  local bad = {}
+  for _, name in ipairs({ 'DapBreakpoint', 'DapBreakpointCondition', 'DapLogPoint', 'DapStopped', 'DapBreakpointRejected' }) do
+    local def = vim.fn.sign_getdefined(name)[1]
+    if not def or not (def.text or ''):match('^[%w>!?]%s?$') then bad[#bad + 1] = name .. '=' .. tostring(def and def.text) end
+  end
+  local set = #(require('dap.breakpoints').get()[buf] or {})
+  debug.toggle_breakpoint()
+  return #bad == 0 and set == 1, ('non-plain markers: %s; breakpoints set: %d'):format(table.concat(bad, ' '), set)
+end)
+
+--- Run fn and return the texts of the messages it shows (waits until `done(texts)`).
+local function messages_from(fn, done, timeout)
+  local texts, show = {}, vim.notify
+  vim.notify = function(m, l, o) texts[#texts + 1] = tostring(m); return show(m, l, o) end
+  local ok, err = pcall(fn)
+  vim.wait(timeout or 8000, function() return done(texts) end, 50)
+  vim.wait(300) -- anything that follows the first message
+  vim.notify = show
+  return texts, ok, err
+end
+
+-- No debugger program for the language: one message that names it, no session, no error.
+check.global('debug_without_adapter_says_what_is_missing', function()
+  local ok, debug = pcall(require, 'czernous.debugging')
+  if not ok then return false, 'no czernous.debugging module' end
+  local old = vim.env.PATH
+  vim.env.PATH = table.concat(vim.tbl_filter(function(d) return vim.fn.executable(d .. '/dlv') == 0 end,
+    vim.split(old, ':', { plain = true })), ':')
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/go/main.go')
+  local go, ok1, err1 = messages_from(debug.continue, function(texts) return #texts > 0 end)
+  vim.env.PATH = old
+  vim.cmd.edit(fixtures .. '/lua/init.lua')
+  local lua, ok2, err2 = messages_from(debug.continue, function(texts) return #texts > 0 end)
+  local session = require('dap').session()
+  local good = ok1 and ok2 and #go == 1 and go[1]:find('dlv', 1, true) and go[1]:find('$PATH', 1, true)
+    and #lua == 1 and lua[1]:find('lua', 1, true) and session == nil
+  return good and true or false, ('go: %s | lua: %s | errors: %s %s'):format(vim.inspect(go), vim.inspect(lua), tostring(err1), tostring(err2))
+end)
+
+-- The debugger program is whatever $PATH (toolchain, devshell) provides.
+check.global('debug_adapter_comes_from_path', function()
+  local ok, debug = pcall(require, 'czernous.debugging')
+  if not ok then return false, 'no czernous.debugging module' end
+  local bin = vim.fn.tempname(); vim.fn.mkdir(bin, 'p')
+  for _, program in ipairs({ 'dlv', 'netcoredbg', 'codelldb' }) do
+    vim.fn.writefile({ '#!/bin/sh', 'exit 0' }, bin .. '/' .. program); vim.fn.setfperm(bin .. '/' .. program, 'rwxr-xr-x')
+  end
+  local old = vim.env.PATH; vim.env.PATH = bin .. ':' .. old
+  local answers = {}
+  for _, filetype in ipairs({ 'go', 'cs', 'rust' }) do
+    debug.prepare(filetype, function(ready) answers[filetype] = ready and true or false end)
+  end
+  vim.wait(8000, function() return vim.tbl_count(answers) == 3 end, 50)
+  vim.env.PATH = old
+  local dap = require('dap')
+  local got = {
+    go = dap.adapters.go and dap.adapters.go.executable and dap.adapters.go.executable.command,
+    cs = dap.adapters.coreclr and dap.adapters.coreclr.command,
+    rust = dap.configurations.rust and dap.configurations.rust[1] and dap.configurations.rust[1].type,
+  }
+  local good = answers.go and answers.cs and answers.rust and got.go == bin .. '/dlv' and got.cs == bin .. '/netcoredbg'
+    and (got.rust == 'codelldb' or got.rust == 'lldb')
+  return good and true or false, vim.inspect({ answers = answers, got = got }):gsub('%s+', ' ')
+end)
+
+-- A real session: start, stop at a breakpoint, read a variable, end. The
+-- statusline says so while it lasts. (Skipped where the Go debugger isn't installed.)
+check.global('debug_session_stops_at_breakpoint', function()
+  if vim.fn.executable('dlv') == 0 or vim.fn.executable('go') == 0 then return 'skip', 'dlv (the Go debugger) not on PATH' end
+  local debug = require('czernous.debugging')
+  local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p')
+  vim.fn.writefile({ 'module dbg', '', 'go 1.21' }, dir .. '/go.mod')
+  vim.fn.writefile({ 'package main', '', 'import "fmt"', '', 'func add(a, b int) int {', '\tsum := a + b', '\treturn sum', '}', '',
+    'func main() {', '\tfmt.Println(add(1, 2))', '}' }, dir .. '/main.go')
+  vim.o.columns = 140
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/main.go')
+  vim.api.nvim_win_set_cursor(0, { 7, 0 })
+  debug.toggle_breakpoint()
+  debug.continue()
+  local dap = require('dap')
+  vim.wait(90000, function() local s = dap.session(); return s ~= nil and s.stopped_thread_id ~= nil and s.current_frame ~= nil end, 100)
+  local s = dap.session()
+  if not (s and s.stopped_thread_id and s.current_frame) then
+    pcall(debug.stop)
+    return false, 'the program never stopped at the breakpoint'
+  end
+  local line, during = s.current_frame.line, rendered_statusline()
+  local value
+  s:request('evaluate', { expression = 'sum', frameId = s.current_frame.id, context = 'hover' }, function(_, r) value = r and r.result or '?' end)
+  vim.wait(5000, function() return value ~= nil end, 50)
+  debug.stop()
+  vim.wait(10000, function() return dap.session() == nil end, 100)
+  vim.wait(200)
+  local after = rendered_statusline()
+  local good = line == 7 and value == '3' and during:find('debug:stopped', 1, true) and dap.session() == nil
+    and not after:find('debug:', 1, true)
+  return good and true or false, ('stopped at line %s, sum=%s, statusline during [%s] after [%s]')
+    :format(tostring(line), tostring(value), during:sub(1, 80), after:sub(1, 80))
+end)
+
 local function cursor_on_call(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   for i = #lines, 1, -1 do

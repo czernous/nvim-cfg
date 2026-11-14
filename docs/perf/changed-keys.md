@@ -10,6 +10,8 @@ Find any key from inside Neovim: `<leader>pk` (search keys by what they do), or 
 | `<leader>ee` / `<leader>ea` | list the problems (errors, warnings, hints) in this file / in all open files |
 | `<leader>en` / `<leader>ep` | jump to the next / previous problem and show its message (same as `]d` / `[d`) |
 | `<leader>ef` | list the fixes offered at the cursor, each with a preview of what it changes (also `gra`, `<leader>ca`). The statusline shows `fix` when the line under the cursor has one |
+| `<leader>b…` | debugging: `bb` breakpoint, `bB` conditional breakpoint, `bc` start / continue, `bn` next line, `bi` step into, `bo` step out, `bv` variables, `bs` call stack, `be` value under the cursor, `br` console, `bl` run the last session again, `bq` stop. Needs the language's debugger on `$PATH` (`dlv`, `lldb-dap` or `codelldb`, `netcoredbg`) |
+| `gm` in the explorer | move / rename by typing the destination path, like `mv` (folders are created; a folder as destination means "into it") |
 | `<leader>ttx` / `<leader>ttd` / `<leader>ttq` / `<leader>ttr` | the keys Trouble used, kept as aliases: problems in all files / in this file / fixes here / where is this used |
 | `<leader>ed` | describe the problem under the cursor |
 | `<leader>eq` | send all problems to the quickfix list (`]q` / `[q` step through it) |

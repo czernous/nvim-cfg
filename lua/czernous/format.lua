@@ -48,34 +48,8 @@ function M.conform_by_ft()
   return out
 end
 
--- Where each formatter program is: $PATH value -> { program = absolute path | false }.
--- Programs are located ONCE per $PATH, by a background shell: asking Neovim
--- (`executable()`) on every key press costs ~100 ms per program that isn't there
--- when $PATH has slow entries. (A new $PATH, e.g. direnv entering a devshell,
--- is looked up afresh.)
-local located = {}
-
---- Find `programs`; calls back with { program = path | false }, never blocking.
-local function locate(programs, callback)
-  local path = vim.env.PATH or ''
-  located[path] = located[path] or {}
-  local known, unknown = located[path], {}
-  for _, program in ipairs(programs) do
-    if known[program] == nil then unknown[#unknown + 1] = program end
-  end
-  if #unknown == 0 then return callback(known) end
-  local script = 'for p in "$@"; do printf "%s=%s\\n" "$p" "$(command -v "$p" 2>/dev/null)"; done'
-  vim.system(vim.list_extend({ 'sh', '-c', script, 'sh' }, unknown), { text = true }, function(r)
-    for line in (r.stdout or ''):gmatch('[^\n]+') do
-      local program, where = line:match('^([^=]+)=(.*)$')
-      if program then known[program] = where ~= '' and where or false end
-    end
-    for _, program in ipairs(unknown) do
-      if known[program] == nil then known[program] = false end
-    end
-    vim.schedule(function() callback(known) end)
-  end)
-end
+-- Formatter programs are located once per $PATH, in the background (see tools.lua).
+local locate = require('czernous.tools').locate
 
 --- A project's own copy (node_modules/.bin/<program>, looking upward from the file).
 local function project_local(buf, program)
