@@ -102,6 +102,24 @@ The work is in three stages; this is stage 1:
     It also fails on keymaps without `desc` and on prefix clashes (goal 6).
     Stages 2 and 3 reuse it as a regression test.
 
+11. **Fixes from the critique of the current setup** (agreed for stage 1):
+    - Diagnostics findable **without virtual text** (owner: virtual text hurts
+      performance; that's why they reached for Trouble). Keep `virtual_text`
+      and signs off; rely on underline, `severity_sort = true`, lualine's
+      error/warning counts, `]d`/`[d` with float, and Trouble's diagnostics
+      list (now working). Choosing the long-term list UI (Trouble vs improved
+      quickfix) is stage 2.
+    - Fixed `signcolumn = "yes"` so gitsigns doesn't shift text.
+    - `<leader><leader>` (`:so`) only acts in Lua/Vim buffers; elsewhere a short
+      warning, not an error.
+    - One format key `<leader>f`: LSP formatting when an attached client supports
+      it, otherwise Neoformat. (`<leader>nf` may stay as an alias.)
+    - No duplicate plugin specs; no keymaps created as side effects of loading
+      a plugin spec file.
+    - A server executable that exists but fails to start (e.g. a rustup proxy
+      without the `rust-analyzer` component, as on this machine) must not spam
+      errors.
+
 ## Non-goals (stage 1)
 
 - Swapping plugins (Trouble vs improved quickfix, nvim-cmp vs blink.cmp,
