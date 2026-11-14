@@ -22,10 +22,14 @@ return {
       default_file_explorer = false, -- `nvim <folder>` shows the start screen instead
       columns = {},
       view_options = { show_hidden = true },
-      keymaps = { ['q'] = { 'actions.close', mode = 'n' } },
+      keymaps = {
+        ['q'] = { 'actions.close', mode = 'n' },
+        -- move by typing the destination, like `mv` (see explorer.lua)
+        ['gm'] = { callback = function() require('czernous.explorer').move() end, desc = 'Move / rename: type where it goes', mode = 'n' },
+      },
       -- A one-line reminder of the keys, at the top of the explorer window.
       win_options = {
-        winbar = '%#Comment# Enter open   - up   q close   |   edit a line + :w  rename / move   dd + :w  delete   o + name + :w  new file (end with / for a folder)   g? all keys',
+        winbar = '%#Comment# Enter open   - up   q close   |   edit a line + :w  rename   gm  move to a typed path   dd + :w  delete   o + name + :w  new file (end with / for a folder)   g? all keys',
       },
     },
   },
