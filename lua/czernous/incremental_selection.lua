@@ -4,6 +4,13 @@
 local M = {}
 local selections = {} -- per-buffer stack of nodes
 
+-- Forget a buffer's stack when the buffer goes away; otherwise every buffer
+-- ever selected in would keep its syntax tree alive for the whole session.
+vim.api.nvim_create_autocmd({ 'BufWipeout', 'BufDelete' }, {
+  group = vim.api.nvim_create_augroup('czernous_incremental_selection', { clear = true }),
+  callback = function(ev) selections[ev.buf] = nil end,
+})
+
 local function select_node(node)
   local srow, scol, erow, ecol = node:range()
   -- `normal! v` toggles: if we're already selecting it would END visual mode.

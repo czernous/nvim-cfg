@@ -1,6 +1,27 @@
 #!/usr/bin/env sh
 # Headless health check for this Neovim config.
 #   ./tests/check.sh                      run all checks (exit code = failures)
+#   ./tests/check.sh --tripwires          prove the standards checks can fail: load each
+#                                         deliberate violation and insist its check FAILS
+#   CHECK_ONLY=<lua pattern> ./tests/check.sh        run only matching checks (no languages)
 #   CHECK_JAVA_PROJECT=~/dev/proj ./tests/check.sh   also open a real Java project
+#   CHECK_CANARY=1 ./tests/check.sh       inject an error to prove errors are caught
 cd "$(dirname "$0")/.." || exit 1
+
+if [ "$1" = "--tripwires" ]; then
+  failed=0
+  for pair in blocking:no_blocking_calls global:no_global_writes reflection:no_reflection \
+              deprecated:no_deprecated_api leak:no_buffer_state_leaks; do
+    wire=${pair%%:*}; target=${pair##*:}
+    out=$(CHECK_TRIPWIRE=$wire CHECK_ONLY="^$target\$" nvim --headless --cmd "luafile tests/check.lua" 2>&1)
+    if printf '%s\n' "$out" | grep -q "^FAIL $target"; then
+      echo "TRIPPED  $wire -> $target fails as it should"
+    else
+      echo "NOT TRIPPED  $wire -> $target did not fail: this check cannot be trusted"
+      failed=$((failed + 1))
+    fi
+  done
+  exit $failed
+fi
+
 exec nvim --headless --cmd "luafile tests/check.lua"

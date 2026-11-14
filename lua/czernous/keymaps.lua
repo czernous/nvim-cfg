@@ -37,6 +37,12 @@ local function in_project(name, title, extra)
   return pickers[name .. ':project']
 end
 
+-- After jumping to a diagnostic, show its message in a popup.
+-- (`jump({ float = true })` is deprecated and removed in Neovim 0.14.)
+local function show_diagnostic(_, bufnr)
+  vim.diagnostic.open_float({ bufnr = bufnr, scope = 'cursor', focus = false })
+end
+
 local function harpoon() return require('harpoon') end
 local function gs() return require('gitsigns') end
 local function ts_select(obj) return function() require('nvim-treesitter-textobjects.select').select_textobject(obj, 'textobjects') end end
@@ -114,8 +120,8 @@ M.groups = {
   {
     name = 'Diagnostics',
     keys = {
-      { 'n', '[d', function() vim.diagnostic.jump({ count = -1, float = true }) end, desc = 'Previous diagnostic' },
-      { 'n', ']d', function() vim.diagnostic.jump({ count = 1, float = true }) end, desc = 'Next diagnostic' },
+      { 'n', '[d', function() vim.diagnostic.jump({ count = -1, on_jump = show_diagnostic }) end, desc = 'Previous diagnostic' },
+      { 'n', ']d', function() vim.diagnostic.jump({ count = 1, on_jump = show_diagnostic }) end, desc = 'Next diagnostic' },
       { 'n', '<leader>vd', vim.diagnostic.open_float, desc = 'View diagnostic message' },
       { 'n', '<leader>q', vim.diagnostic.setloclist, desc = 'Diagnostics to location list' },
       { 'n', '<leader>ttx', '<cmd>Trouble diagnostics toggle<cr>', plugin = 'trouble.nvim', desc = 'Trouble: diagnostics (all files)' },

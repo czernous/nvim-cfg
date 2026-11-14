@@ -11,6 +11,7 @@ local check = { globals = {}, langs = {}, recorded = {}, errors = {}, results = 
 -- Recording: keymaps and errors
 ---------------------------------------------------------------------------
 local function classify(src)
+  if src:find(root .. '/tests/tripwires/', 1, true) then return 'user' end -- deliberate violations
   if src:find(root .. '/tests/', 1, true) then return 'test' end
   if src:find(root .. '/', 1, true) then return 'user' end
   if src:find('lazy/core/handler/keys', 1, true) then return 'lazy' end
@@ -33,11 +34,67 @@ end
 
 check.startup_lookups = {}
 check.exe_calls = {}
+check.blocking = {}      -- blocking calls made by config code: { name, src, phase }
+check.global_writes = {} -- globals created by config code: { name, src }
+check.hot = false        -- true while the check fires hot-path events
+
+--- First stack frame that is config code (lua/, after/, or a tripwire), if any.
+local function config_caller()
+  for level = 3, 12 do
+    local info = debug.getinfo(level, 'Sl')
+    if not info then return nil end
+    local src = info.source:gsub('^@', '')
+    if classify(src) == 'user' then return src:sub(#root + 2) .. ':' .. (info.currentline or 0) end
+  end
+end
+
+local function record_blocking(name)
+  local phase = (vim.v.vim_did_enter == 0 and 'startup') or (check.hot and 'hot path') or nil
+  if not phase then return end
+  local src = config_caller()
+  if src then table.insert(check.blocking, { name = name, src = src, phase = phase }) end
+end
+
 local orig_executable = vim.fn.executable
 vim.fn.executable = function(name)
   if vim.v.vim_did_enter == 0 then table.insert(check.startup_lookups, name) end
   check.exe_calls[name] = (check.exe_calls[name] or 0) + 1
+  record_blocking('vim.fn.executable(' .. tostring(name) .. ')')
   return orig_executable(name)
+end
+for _, fname in ipairs({ 'system', 'systemlist', 'exepath' }) do
+  local orig = vim.fn[fname]
+  vim.fn[fname] = function(...) record_blocking('vim.fn.' .. fname); return orig(...) end
+end
+do
+  local popen, execute, system = io.popen, os.execute, vim.system
+  io.popen = function(...) record_blocking('io.popen'); return popen(...) end
+  os.execute = function(...) record_blocking('os.execute'); return execute(...) end
+  vim.system = function(cmd, opts, on_exit)
+    local obj = system(cmd, opts, on_exit)
+    local wait = obj.wait
+    obj.wait = function(self, ...) record_blocking('vim.system():wait()'); return wait(self, ...) end
+    return obj
+  end
+end
+
+setmetatable(_G, {
+  __newindex = function(t, k, v)
+    rawset(t, k, v)
+    local info = debug.getinfo(2, 'Sl')
+    local src = info and info.source:gsub('^@', '') or ''
+    if classify(src) == 'user' then
+      table.insert(check.global_writes, { name = tostring(k), src = src:sub(#root + 2) .. ':' .. (info.currentline or 0) })
+    end
+  end,
+})
+
+-- Tripwires: CHECK_TRIPWIRE=<name> loads a deliberate violation as if it were
+-- config code, to prove the matching check can fail (see check.sh --tripwires).
+check.tripwire = vim.env.CHECK_TRIPWIRE
+if check.tripwire and check.tripwire ~= '' then
+  vim.opt.runtimepath:prepend(root .. '/tests/tripwires')
+  require('czernous.tripwire_' .. check.tripwire)
 end
 
 local orig_notify = vim.notify
@@ -680,6 +737,151 @@ check.global('bench_reports_instability', function()
   return s1 == false and s2 == true, ('20%% apart -> stable=%s (want false); 5%% apart -> stable=%s (want true)'):format(tostring(s1), tostring(s2))
 end)
 
+---------------------------------------------------------------------------
+-- Engineering standards (each proven by a tripwire: ./tests/check.sh --tripwires)
+---------------------------------------------------------------------------
+local allow = dofile(root .. '/tests/standards-allowlist.lua')
+
+--- Lua source files that count as config code.
+local function config_files()
+  local files = vim.fn.globpath(root, 'lua/**/*.lua', false, true)
+  vim.list_extend(files, vim.fn.globpath(root, 'after/**/*.lua', false, true))
+  table.insert(files, root .. '/init.lua')
+  if check.tripwire then vim.list_extend(files, vim.fn.globpath(root, 'tests/tripwires/**/*.lua', false, true)) end
+  return files
+end
+
+--- Lines in config code matching any of `patterns` (comments stripped).
+local function scan(patterns)
+  local hits = {}
+  for _, f in ipairs(config_files()) do
+    for i, line in ipairs(vim.fn.readfile(f)) do
+      local code = line:gsub('%-%-.*$', '')
+      for _, pat in ipairs(patterns) do
+        if code:find(pat) then hits[#hits + 1] = ('%s:%d (%s)'):format(f:sub(#root + 2), i, vim.trim(code):sub(1, 50)) end
+      end
+    end
+  end
+  return hits
+end
+
+-- No blocking calls at startup or on hot paths (each can cost ~100ms on slow $PATHs).
+check.global('no_blocking_calls', function()
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua')
+  local buf = vim.api.nvim_get_current_buf()
+  check.hot = true
+  for _, ev in ipairs({ 'CursorMoved', 'CursorMovedI', 'TextChanged', 'TextChangedI', 'InsertCharPre', 'WinScrolled' }) do
+    pcall(vim.api.nvim_exec_autocmds, ev, { buffer = buf, modeline = false })
+  end
+  pcall(vim.api.nvim_eval_statusline, vim.o.statusline, {})
+  check.hot = false
+  local bad = {}
+  for _, b in ipairs(check.blocking) do
+    local allowed = false
+    for _, a in ipairs(allow.blocking) do
+      if b.src:find(a.file, 1, true) and b.name:find(a.call, 1, true) then allowed = true end
+    end
+    if not allowed then bad[#bad + 1] = ('%s at %s (%s)'):format(b.name, b.src, b.phase) end
+  end
+  return #bad == 0, table.concat(bad, ', ')
+end)
+
+check.global('no_global_writes', function()
+  local bad = {}
+  for _, g in ipairs(check.global_writes) do bad[#bad + 1] = g.name .. ' at ' .. g.src end
+  vim.list_extend(bad, scan({ '_G%.[%w_]+%s*=', '_G%[' }))
+  return #bad == 0, table.concat(bad, ', ')
+end)
+
+-- "Reflection": code that inspects or builds code at runtime.
+check.global('no_reflection', function()
+  local bad = scan({ 'debug%.', 'loadstring', '[^%w_]load%(', 'setfenv', 'getfenv' })
+  return #bad == 0, table.concat(bad, ', ')
+end)
+
+check.global('no_deprecated_api', function()
+  local bad = scan({
+    'vim%.loop', 'get_active_clients', 'buf_get_clients', 'diagnostic%.goto_', 'tbl_islist',
+    'vim%.highlight%.on_yank', 'nvim_buf_get_option', 'nvim_buf_set_option', 'nvim_win_get_option',
+    'nvim_win_set_option', 'vim%.lsp%.start_client', 'vim%.validate%(%s*{',
+  })
+  -- Neovim's own record of deprecated calls made this session.
+  local ok, out = pcall(vim.api.nvim_exec2, 'checkhealth vim.deprecated', { output = true })
+  if ok then
+    for _, line in ipairs(vim.api.nvim_buf_get_lines(0, 0, -1, false)) do
+      if line:find(root .. '/lua', 1, true) or line:find(root .. '/after', 1, true) or line:find('tests/tripwires', 1, true) then
+        bad[#bad + 1] = vim.trim(line)
+      end
+    end
+    vim.cmd('silent! bwipeout!')
+  end
+  return #bad == 0, table.concat(bad, ', ')
+end)
+
+-- State keyed by a buffer must go away with the buffer. Open and wipe many
+-- buffers, then walk everything reachable from config code (modules, autocmd
+-- and keymap callbacks, their upvalues) for tables still keyed by a dead buffer.
+check.global('no_buffer_state_leaks', function()
+  local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p')
+  local dead = {}
+  vim.cmd('silent! %bwipeout!')
+  for i = 1, 40 do
+    local f = ('%s/f%d.lua'):format(dir, i)
+    vim.fn.writefile({ 'local function add(a, b)', '  return a + b', 'end', '', 'print(add(1, 2))' }, f)
+    vim.cmd.edit(f)
+    local buf = vim.api.nvim_get_current_buf()
+    -- Neovim's LSP startup touches the buffer on the next tick (and errors if it is
+    -- already gone); give it that tick, as any human-paced use would.
+    vim.wait(30)
+    vim.api.nvim_win_set_cursor(0, { 2, 9 })
+    vim.api.nvim_feedkeys(vim.keycode('<C-space><C-space><Esc>'), 'x', false)
+    vim.cmd('doautocmd CursorMoved'); vim.cmd('doautocmd InsertEnter'); vim.cmd('doautocmd InsertLeave')
+    vim.cmd('enew'); vim.cmd('silent! bwipeout! ' .. buf)
+    dead[buf] = true
+  end
+  vim.wait(300)
+  collectgarbage('collect'); collectgarbage('collect')
+
+  local seen, leaks = {}, {}
+  local function walk(v, path, depth)
+    if depth > 12 or seen[v] then return end
+    local t = type(v)
+    if t == 'table' then
+      seen[v] = true
+      if getmetatable(v) and getmetatable(v).__mode then return end -- weak tables free themselves
+      local hits = 0
+      for k, val in pairs(v) do
+        if type(k) == 'number' and dead[k] and type(val) ~= 'boolean' then hits = hits + 1 end
+        if type(val) == 'table' or type(val) == 'function' then walk(val, path .. '.' .. tostring(k), depth + 1) end
+      end
+      if hits >= 5 then leaks[#leaks + 1] = ('%s holds %d entries for wiped buffers'):format(path, hits) end
+    elseif t == 'function' then
+      seen[v] = true
+      local info = debug.getinfo(v, 'S')
+      if classify(info.source:gsub('^@', '')) ~= 'user' then return end
+      local i = 1
+      while true do
+        local name, up = debug.getupvalue(v, i)
+        if not name then break end
+        if type(up) == 'table' or type(up) == 'function' then walk(up, path .. ':' .. name, depth + 1) end
+        i = i + 1
+      end
+    end
+  end
+  for name, mod in pairs(package.loaded) do
+    if type(name) == 'string' and name:match('^czernous') then walk(mod, name, 0) end
+  end
+  for _, au in ipairs(vim.api.nvim_get_autocmds({})) do
+    if type(au.callback) == 'function' then walk(au.callback, 'autocmd ' .. au.event, 0) end
+  end
+  for _, mode in ipairs({ 'n', 'x', 'i', 'o' }) do
+    for _, km in ipairs(vim.api.nvim_get_keymap(mode)) do
+      if type(km.callback) == 'function' then walk(km.callback, 'keymap ' .. km.lhs, 0) end
+    end
+  end
+  return #leaks == 0, table.concat(leaks, '; ')
+end)
+
 check.global('no_cfg_dir', function()
   return vim.fn.isdirectory(root .. '/lua/czernous/cfg') == 0, 'lua/czernous/cfg still exists'
 end)
@@ -778,16 +980,23 @@ local function run()
   vim.api.nvim_exec_autocmds('User', { pattern = 'VeryLazy', modeline = false })
   vim.wait(500)
 
-  for _, spec in ipairs(check.langs) do
-    local ok, err = pcall(run_lang, spec)
-    if not ok then report('FAIL', 'lang:' .. spec.name, err) end
+  -- CHECK_ONLY=<lua pattern>: run only the matching global checks (fast; used by --tripwires).
+  local only = vim.env.CHECK_ONLY
+  if only == '' then only = nil end
+  if not only then
+    for _, spec in ipairs(check.langs) do
+      local ok, err = pcall(run_lang, spec)
+      if not ok then report('FAIL', 'lang:' .. spec.name, err) end
+    end
   end
 
   for _, g in ipairs(check.globals) do
+    if only and not g.name:match(only) then goto continue end
     local ok, passed, msg = pcall(g.fn)
     if not ok then report('FAIL', g.name, passed)
     elseif passed then report('PASS', g.name)
     else report('FAIL', g.name, msg) end
+    ::continue::
   end
 
   -- Errors last, so everything above had a chance to produce them.

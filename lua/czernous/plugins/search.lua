@@ -8,10 +8,12 @@ return {
     dependencies = {
       'nvim-lua/plenary.nvim',
       {
-        -- Native fuzzy sorter; needs `make` and a C compiler.
+        -- Native fuzzy sorter; needs `make` and a C compiler at install time.
+        -- (No `cond = executable('make')`: a PATH lookup on every startup costs
+        -- ~100ms on slow PATHs. Without make the build fails once, at install,
+        -- and Telescope falls back to its Lua sorter.)
         'nvim-telescope/telescope-fzf-native.nvim',
         build = 'make',
-        cond = function() return vim.fn.executable('make') == 1 end,
       },
     },
     config = function()
