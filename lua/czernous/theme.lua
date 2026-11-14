@@ -16,7 +16,10 @@
 --      hover and any future plugin follow without being named. Only the ACCENTS
 --      keep a background: the things you must be able to see. Popups stay
 --      readable through their border ('winborder').
---   3. The result is cached, so a start costs ~0.6 ms instead of ~3 ms and the
+--   3. "The selected item" looks the same everywhere. Any group that marks a
+--      selection (its name ends in Sel, Selection or Selected: completion menu,
+--      picker, wildmenu, any plugin) gets the theme's own selection colour.
+--   4. The result is cached, so a start costs ~0.6 ms instead of ~3 ms and the
 --      theme plugin is not even loaded.
 --
 -- Toggle transparency at runtime: <leader>tT.
@@ -101,19 +104,39 @@ end
 --------------------------------------------------------------------------------
 -- The rules
 --------------------------------------------------------------------------------
+local accent_names = nil
 local function accent_set()
-  local set = {}
-  for _, name in ipairs(M.accents) do set[name] = true end
-  return set
+  if not accent_names then
+    accent_names = {}
+    for _, name in ipairs(M.accents) do accent_names[name] = true end
+  end
+  return accent_names
 end
 
---- Rule 2: no group but an accent may paint one of the theme's background shades.
---- Also used for groups that plugins define later.
+--- Does this group mark "the selected item"? Recognised by name, so the
+--- completion menu, the picker and any plugin added later are covered.
+function M.is_selection(name)
+  return name:find('Selection$') ~= nil or name:find('Selected$') ~= nil or name:find('Sel$') ~= nil
+    or name == 'WildMenu' or name == 'QuickFixLine'
+end
+
+--- Groups that keep a background: the listed accents and every selection group.
+function M.is_accent(name) return accent_set()[name] == true or M.is_selection(name) end
+
+--- Rules 2 and 3, applied to every highlight group that exists right now. Also
+--- run for groups that plugins define later.
 function M.restyle()
-  if not M.opts.transparent then return end
-  local accent, shades = accent_set(), M.shades
+  local shades = M.shades
+  local selection = vim.api.nvim_get_hl(0, { name = 'Visual', link = false }).bg
   for name, def in pairs(vim.api.nvim_get_hl(0, {})) do
-    if def.bg and shades[def.bg] and not accent[name] then
+    if def.bg and M.is_selection(name) and name ~= 'Visual' and name ~= 'VisualNOS' then
+      -- one selection colour everywhere (only groups that paint a background:
+      -- parts like PmenuKindSel just colour text on top of it)
+      if selection and def.bg ~= selection then
+        def.bg, def.ctermbg = selection, nil
+        vim.api.nvim_set_hl(0, name, def)
+      end
+    elseif M.opts.transparent and def.bg and shades[def.bg] and not M.is_accent(name) then
       def.bg, def.ctermbg = nil, nil
       vim.api.nvim_set_hl(0, name, def)
     end
@@ -142,7 +165,7 @@ end
 -- thrown away whenever plugins are updated. Bump CACHE_VERSION when the rules
 -- above change. The key is compared as plain text (hashing it cost 3.9 ms).
 --------------------------------------------------------------------------------
-local CACHE_VERSION = 3
+local CACHE_VERSION = 4
 local cache_dir = vim.fn.stdpath('cache') .. '/czernous-theme'
 
 local function cache_key(theme)

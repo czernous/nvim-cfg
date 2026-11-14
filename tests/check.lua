@@ -599,11 +599,9 @@ check.global('ui_is_transparent', function()
   -- make sure popup-owning plugins have defined their groups
   pcall(require, 'telescope'); pcall(require, 'which-key'); pcall(require, 'blink.cmp')
   vim.wait(200)
-  local accent = {}
-  for _, name in ipairs(theme.accents or {}) do accent[name] = true end
   local bad = {}
   for name, def in pairs(vim.api.nvim_get_hl(0, {})) do
-    if def.bg and theme.shades[def.bg] and not accent[name] then bad[#bad + 1] = name end
+    if def.bg and theme.shades[def.bg] and not theme.is_accent(name) then bad[#bad + 1] = name end
   end
   -- and the surfaces you actually look at must have no background at all
   for _, name in ipairs({ 'Normal', 'NormalFloat', 'Pmenu', 'StatusLine', 'SignColumn', 'TelescopeNormal', 'WhichKeyNormal', 'BlinkCmpMenu', 'BlinkCmpDoc' }) do
@@ -622,6 +620,21 @@ check.global('accents_keep_background', function()
     if not vim.tbl_contains(theme.accents or {}, name) then bad[#bad + 1] = name .. ' (not declared an accent)' end
   end
   return #bad == 0, 'no visible background: ' .. table.concat(bad, ', ')
+end)
+
+-- "The selected item" must look the same, and be clearly visible, everywhere:
+-- every selection highlight uses the theme's own selection colour (Visual).
+check.global('selection_is_visible_everywhere', function()
+  local theme = require('czernous.theme')
+  pcall(require, 'blink.cmp'); pcall(require, 'telescope'); pcall(require, 'which-key')
+  vim.wait(300)
+  local visual = hl('Visual').bg
+  if not visual then return false, 'the theme has no selection (Visual) background' end
+  local bad = {}
+  for _, name in ipairs({ 'PmenuSel', 'BlinkCmpMenuSelection', 'TelescopeSelection', 'WildMenu', 'QuickFixLine' }) do
+    if hl(name).bg ~= visual then bad[#bad + 1] = ('%s=%s'):format(name, hex(hl(name).bg) or 'none') end
+  end
+  return #bad == 0, ('selection colour is %s but: %s'):format(hex(visual), table.concat(bad, ', '))
 end)
 
 check.global('popups_have_borders', function()
@@ -1232,10 +1245,14 @@ check.global('start_screen', function()
     local r = vim.system(cmd, { text = true, cwd = root }):wait(30000)
     return (r.stdout or '') .. (r.stderr or '')
   end
-  local empty, with_file = run({}), run({ fixtures .. '/lua/init.lua' })
-  local shown = empty:find('ft=czstart') and empty:find('ready in [%d%.]+ ms') and empty:find('find file', 1, true) and empty:find('mod=false')
+  local empty, with_file, with_dir = run({}), run({ fixtures .. '/lua/init.lua' }), run({ '.' })
+  local function is_start(out)
+    return out:find('ft=czstart') and out:find('ready in [%d%.]+ ms') and out:find('find file', 1, true) and out:find('mod=false')
+  end
   local absent = with_file:find('ft=lua') and not with_file:find('ready in')
-  return (shown and absent) and true or false, ('no file: %s || with file: %s'):format(empty:sub(1, 160), with_file:sub(1, 80))
+  -- `nvim .` (a folder, the owner's usual way in) gets the start screen too, not the file explorer
+  return (is_start(empty) and is_start(with_dir) and absent) and true or false,
+    ('no args: %s || `nvim .`: %s || with file: %s'):format(empty:sub(1, 60), with_dir:sub(1, 90), with_file:sub(1, 40))
 end)
 
 check.global('statusline_shows_problems_and_branch', function()
@@ -1296,6 +1313,36 @@ check.global('statusline_is_cheap', function()
   -- nvim_eval_statusline itself returns a table+string (~150 B); the config may add nothing on top
   if per > 400 then bad[#bad + 1] = ('%d B allocated per redraw'):format(per) end
   return #bad == 0, table.concat(bad, '; ')
+end)
+
+-- K shows documentation from the language server; with no server it must say so
+-- (naming the language) instead of failing silently.
+check.global('hover_key_explains_missing_server', function()
+  vim.cmd('silent! %bwipeout!'); vim.cmd('enew'); vim.bo.filetype = 'kotlin'
+  if #vim.lsp.get_clients({ bufnr = 0 }) > 0 then return 'skip', 'a Kotlin language server is installed here' end
+  local before, said = #check.errors, nil
+  local n = vim.notify
+  vim.notify = function(m, l, o) if l == vim.log.levels.WARN or l == vim.log.levels.INFO then said = tostring(m) end return n(m, l, o) end
+  local ok = pcall(vim.api.nvim_feedkeys, 'K', 'x', false)
+  vim.notify = n
+  check.snapshot_messages()
+  local explained = said and said:lower():find('kotlin', 1, true) and said:lower():find('language server', 1, true)
+  -- and with a server attached K still opens the documentation popup
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua')
+  vim.wait(20000, function() local c = vim.lsp.get_clients({ bufnr = 0 })[1]; return c and c:supports_method('textDocument/hover', 0) end, 100)
+  vim.api.nvim_win_set_cursor(0, { 5, 0 }) -- on `print`
+  local wins = #vim.api.nvim_list_wins()
+  vim.api.nvim_feedkeys('K', 'x', false)
+  vim.wait(4000, function() return #vim.api.nvim_list_wins() > wins end, 50)
+  local hovered = #vim.api.nvim_list_wins() > wins
+  vim.cmd('silent! only')
+  return (ok and explained and hovered and #check.errors == before) and true or false,
+    ('no server: said %q; with server: popup opened=%s'):format(tostring(said), tostring(hovered))
+end)
+
+check.global('kotlin_server_known', function()
+  local servers = require('czernous.lsp').servers
+  return servers.kotlin_language_server ~= nil or servers.kotlin_lsp ~= nil, 'no Kotlin entry in lsp.servers'
 end)
 
 check.global('no_cfg_dir', function()

@@ -79,7 +79,15 @@ local function render(buf, win)
 end
 
 --- Show the start screen if Neovim was started with nothing to edit.
-function M.show()
+---@param started_on_folder boolean `nvim <folder>`: replace the folder listing
+function M.show(started_on_folder)
+  if started_on_folder then
+    -- Neovim opened the folder in its file explorer; swap that for an empty buffer.
+    local listing = vim.api.nvim_get_current_buf()
+    vim.cmd('silent! %argdelete')
+    vim.cmd('enew')
+    pcall(vim.api.nvim_buf_delete, listing, { force = true })
+  end
   local buf = vim.api.nvim_get_current_buf()
   if vim.fn.argc() > 0 or vim.api.nvim_buf_get_name(buf) ~= '' or vim.bo[buf].modified
     or vim.api.nvim_buf_line_count(buf) > 1 or vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] ~= '' then

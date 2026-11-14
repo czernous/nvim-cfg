@@ -20,6 +20,7 @@ M.servers = {
   jdtls = 'jdtls',
   csharp_ls = 'csharp-ls',
   vtsls = 'vtsls',
+  kotlin_language_server = 'kotlin-language-server', -- .kt and Gradle .kts files
 }
 
 --- Names of servers found and enabled (filled shortly after startup).
@@ -126,6 +127,24 @@ function M.refresh()
       end
     end)
   end)
+end
+
+--- K: documentation for the thing under the cursor. With no language server
+--- attached it says so (naming the language) instead of failing silently.
+function M.hover()
+  local buf = vim.api.nvim_get_current_buf()
+  if #vim.lsp.get_clients({ bufnr = buf, method = 'textDocument/hover' }) > 0 then
+    -- press K again to jump into the popup; q closes it
+    vim.lsp.buf.hover({ border = 'rounded', max_width = 80, max_height = 20 })
+    return
+  end
+  local filetype = vim.bo[buf].filetype
+  if filetype == 'help' or filetype == 'vim' or filetype == 'man' or filetype == '' then
+    vim.cmd('normal! K') -- Vim's own lookup (help pages, man pages)
+    return
+  end
+  vim.notify(('No language server is running for %s files, so there is no documentation to show.\n'
+    .. 'Install one (it is picked up from $PATH) -- :checkhealth czernous lists what is missing.'):format(filetype), vim.log.levels.INFO)
 end
 
 return M

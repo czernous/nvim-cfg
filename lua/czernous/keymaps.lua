@@ -43,6 +43,16 @@ local function show_diagnostic(_, bufnr)
   vim.diagnostic.open_float({ bufnr = bufnr, scope = 'cursor', focus = false })
 end
 
+-- The built-in file explorer. When Neovim was started on a folder (`nvim .`) it
+-- is kept from loading at startup (init.lua); load it now if so.
+local function explorer()
+  if vim.fn.exists(':Explore') ~= 2 then
+    vim.g.loaded_netrwPlugin = nil
+    vim.cmd('runtime! plugin/netrwPlugin.vim')
+  end
+  vim.cmd('Explore')
+end
+
 local function harpoon() return require('harpoon') end
 local function gs() return require('gitsigns') end
 local function ts_select(obj) return function() require('nvim-treesitter-textobjects.select').select_textobject(obj, 'textobjects') end end
@@ -52,7 +62,7 @@ M.groups = {
   {
     name = 'Files & search',
     keys = {
-      { 'n', '<leader>pv', '<cmd>Ex<cr>', desc = 'Project view (file explorer)' },
+      { 'n', '<leader>pv', function() explorer() end, desc = 'Project view (file explorer)' },
       { 'n', '<leader>pf', in_project('find_files', 'Find files'), desc = "Find files (this file's project)" },
       { 'n', '<leader>pg', in_project('live_grep', 'Grep'), desc = "Grep as you type (this file's project)" },
       { 'n', '<leader>ps', in_project('grep_string', 'Search', function() return { search = vim.fn.input('Grep > ') } end), desc = "Search for a word (this file's project)" },
@@ -118,6 +128,14 @@ M.groups = {
     },
   },
   {
+    name = 'Code help',
+    keys = {
+      -- Works everywhere: says so when no language server is running for the file.
+      -- Press K twice to jump into the popup (q closes it).
+      { 'n', 'K', function() require('czernous.lsp').hover() end, desc = 'Documentation for what is under the cursor' },
+    },
+  },
+  {
     name = 'Diagnostics',
     keys = {
       { 'n', '[d', function() vim.diagnostic.jump({ count = -1, on_jump = show_diagnostic }) end, desc = 'Previous diagnostic' },
@@ -178,8 +196,6 @@ M.groups = {
       { 'n', '<leader>D', telescope('lsp_type_definitions'), desc = 'Type definition' },
       { 'n', 'gO', telescope('lsp_document_symbols'), desc = 'Document symbols (outline)' },
       { 'n', '<leader>ws', telescope('lsp_dynamic_workspace_symbols'), desc = 'Workspace symbols' },
-      -- Press K twice to jump into the hover window (q closes it).
-      { 'n', 'K', function() vim.lsp.buf.hover({ border = 'rounded', max_width = 80, max_height = 20 }) end, desc = 'Hover documentation' },
       -- Insert mode; Neovim's built-in <C-s> does the same.
       { 'i', '<C-h>', function() vim.lsp.buf.signature_help({ border = 'rounded', max_width = 80, max_height = 15 }) end, desc = 'Signature help' },
       { 'n', '<leader>wa', function() vim.lsp.buf.add_workspace_folder() end, desc = 'Workspace: add folder' },

@@ -21,3 +21,6 @@ vim.opt.winborder = 'rounded'
 
 -- No `~` markers on the empty lines after the end of a file.
 vim.opt.fillchars:append({ eob = ' ' })
+
+-- The built-in file explorer (<leader>pv) without its help banner on top.
+vim.g.netrw_banner = 0
