@@ -70,6 +70,48 @@ updates and Nix packaging have as little as possible to go wrong.
    - Spotless detection also finds Spotless applied in subprojects/convention plugins,
      and a non-executable `gradlew` gives a clear warning, not a raw error.
 
+9. **Engineering standards on par with the owner's ristretto project**, translated to
+   Lua/Neovim and **enforced by checks, not by review** (a rule a person has to remember
+   eventually gets forgotten):
+   - *Fitness checks* (in `tests/check.sh`), each proven by a deliberate tripwire that
+     must make it fail ("break it and watch it fail before you believe it"):
+     - no blocking calls at startup or on hot paths: `vim.fn.system`/`systemlist`,
+       `vim.fn.executable`/`exepath`, `io.popen`, `os.execute`, `vim.system():wait()`
+       outside explicitly allowed sites;
+     - no global variables written by the config (`_G`, implicit globals);
+     - no `debug.*` / string-built dynamic dispatch ("reflection") in config code
+       (tests exempt);
+     - module boundaries: plugin spec files only return specs; keys only in
+       `keymaps.lua`; no deprecated APIs (`vim.loop`, deprecated `vim.lsp.*`).
+   - *No leaks:* any state keyed by buffer/window/client is released when that
+     buffer/window/client goes away (e.g. `incremental_selection.lua` keeps a
+     per-buffer table that is never cleared today). A check opens and wipes ~100
+     buffers and asserts Lua memory (`collectgarbage('count')` after a full collect)
+     returns to within a small bound.
+   - *Allocation is the instrument for hot paths:* anything running per keystroke /
+     cursor move / redraw (autocmds on `CursorMoved`, `TextChanged*`, statusline
+     functions, completion hooks) is measured as bytes allocated per event (Lua
+     `collectgarbage('count')` delta over N events) — exact and load-independent — with a
+     budget per hook. Throughput/latency numbers are reported with the spread of ≥2
+     agreeing runs.
+   - *Hot-path Lua style:* cache module lookups in locals, no closures/tables created
+     per event, `vim.api` over `vim.fn` where equivalent, async (`vim.uv`, `vim.system`
+     with callback) for any I/O.
+   - *Why-comments and decision records:* decisions a reader could expect to go the
+     other way (plugin choices, plugin manager, theme mechanism) get a short ADR in
+     `docs/adr/`.
+   - SIMD/native code: not applicable to config Lua (LuaJIT has no SIMD; the heavy work —
+     tree-sitter parsing, fuzzy matching — is already native). Revisit only if a
+     measurement shows a hot loop in our Lua.
+10. **Themes: several base16 palettes, dark and light, following the terminal.**
+   - A few curated palettes ship in the repo (e.g. One Dark plus 2–3 other dark and 2–3
+     light ones); on Nix, Stylix supplies the palette instead.
+   - **Polarity follows the system/terminal:** Neovim detects the terminal background
+     (sets `'background'`); only palettes matching it can be active. A light palette can't
+     be chosen while the terminal is dark and vice versa; if the terminal switches
+     (`OptionSet background`), Neovim switches to the configured palette of the new polarity.
+   - 2a builds the palette mechanism + polarity rule; a theme picker UI is 2b.
+
 ## Decisions already made (owner)
 
 - Editor stays **AI-free**: completion and fixes come from language tools only.
@@ -167,4 +209,4 @@ updates and Nix packaging have as little as possible to go wrong.
 - Startup ≤ 50 ms median on this machine (or the audit shows why not, and the owner
   accepts the number); no measure slower than baseline.
 - No plugin with a build/download step; `tests/check.sh` green, including new checks.
-- Step 1 leftovers (goal 8) closed.
+- Step 1 leftovers (goal 8) closed; standards (goal 9) enforced by tripwire-proven checks; palette + polarity mechanism (goal 10) in place.
