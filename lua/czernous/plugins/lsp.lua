@@ -1,29 +1,22 @@
+-- Language server support. Server setup is in lua/czernous/lsp.lua;
+-- keys are in keymaps.lua (group 'LSP').
 return {
-    {
-        "neovim/nvim-lspconfig",
-        -- event = "LazyFile",
-        dependencies = {
-            -- Automatically install LSPs to stdpath for neovim.
-            -- Mason moved orgs: williamboman/* -> mason-org/* (same plugin, current home).
-            { 'mason-org/mason.nvim', config = true },
-            'mason-org/mason-lspconfig.nvim',
-
-            -- Useful status updates for LSP
-            -- NOTE: `opts = {}` is the same as calling `require('fidget').setup({})`
-            { 'j-hui/fidget.nvim', opts = {} },
-        },
-      },
-
-    -- lazydev.nvim: Lua LS types/completion for the Neovim API and plugins,
-    -- while editing your config. Replaces the archived folke/neodev.nvim.
-    {
-        'folke/lazydev.nvim',
-        ft = 'lua',
-        opts = {
-            library = {
-                -- Load luvit (vim.uv) types when the `vim.uv` word is found.
-                { path = '${3rd}/luv/library', words = { 'vim%.uv' } },
-            },
-        },
+  {
+    'neovim/nvim-lspconfig', -- provides default configs for each server
+    dependencies = {
+      { 'mason-org/mason.nvim', opts = {} }, -- :Mason, installs servers
+      'mason-org/mason-lspconfig.nvim',
+      { 'j-hui/fidget.nvim', opts = {} }, -- LSP progress messages
     },
+  },
+  {
+    -- Neovim API types/completion while editing this config (Lua).
+    'folke/lazydev.nvim',
+    ft = 'lua',
+    opts = {
+      library = {
+        { path = '${3rd}/luv/library', words = { 'vim%.uv' } },
+      },
+    },
+  },
 }

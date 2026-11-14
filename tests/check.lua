@@ -118,6 +118,93 @@ check.global('no_shadowing', function()
   return #bad == 0, table.concat(vim.fn.uniq(vim.fn.sort(bad)), ', ')
 end)
 
+-- Every key the config defines must come from the single registry file
+-- (directly, or via lazy.nvim `keys` generated from it).
+check.global('keymaps_central', function()
+  local ok_reg, reg = pcall(require, 'czernous.keymaps')
+  local registered = {}
+  if ok_reg and type(reg) == 'table' and reg.all then
+    for _, k in ipairs(reg.all()) do registered[k.mode .. norm(k.lhs)] = true end
+  end
+  local bad = {}
+  for _, r in ipairs(check.user_maps()) do
+    local ok
+    if r.kind == 'lazy' then ok = registered[r.mode .. norm(r.lhs)]
+    else ok = r.src:match('lua/czernous/keymaps%.lua$') ~= nil end
+    if not ok then bad[#bad + 1] = ('%s %s (%s)'):format(r.mode, r.lhs, vim.fn.fnamemodify(r.src, ':t')) end
+  end
+  return #bad == 0, table.concat(bad, ', ')
+end)
+
+-- Fails on the same mode+lhs defined twice in the registry; otherwise prints
+-- (as INFO) keys that do the same thing, for the owner to pick from.
+check.global('duplicate_actions_report', function()
+  local ok_reg, reg = pcall(require, 'czernous.keymaps')
+  if not (ok_reg and type(reg) == 'table' and reg.groups) then return false, 'no registry' end
+  local by_lhs, by_rhs, dup = {}, {}, {}
+  for _, g in ipairs(reg.groups) do
+    for _, k in ipairs(g.keys) do
+      for _, m in ipairs(type(k[1]) == 'table' and k[1] or { k[1] }) do
+        local id = (g.buffer or 'global') .. ' ' .. m .. ' ' .. norm(k[2])
+        if by_lhs[id] then dup[#dup + 1] = id end
+        by_lhs[id] = true
+        local rkey = type(k[3]) == 'string' and (m .. ':' .. k[3]) or k[3]
+        by_rhs[rkey] = by_rhs[rkey] or {}
+        local list = by_rhs[rkey]
+        local seen_lhs = false
+        for _, e in ipairs(list) do if e.lhs == k[2] then seen_lhs = true end end
+        if not seen_lhs then list[#list + 1] = { lhs = k[2], text = ('%s %s (%s)'):format(m, k[2], k.desc or '?') } end
+      end
+    end
+  end
+  for _, keys in pairs(by_rhs) do
+    if #keys > 1 then
+      io.stdout:write('INFO same action: ' .. table.concat(vim.tbl_map(function(e) return e.text end, keys), '  =  ') .. '\n')
+    end
+  end
+  return #dup == 0, 'defined twice: ' .. table.concat(dup, ', ')
+end)
+
+-- <C-space> selects the node under the cursor; pressing it again (in visual
+-- mode) must stay in visual mode and select a larger node.
+check.global('incremental_selection_grows', function()
+  vim.cmd('silent! %bwipeout!')
+  vim.cmd.edit(fixtures .. '/lua/init.lua')
+  vim.api.nvim_win_set_cursor(0, { 2, 9 }) -- on `a` in `return a + b`
+  local function sel()
+    local s, e = vim.fn.getpos('v'), vim.fn.getpos('.')
+    return math.abs((e[2] - s[2]) * 1000 + e[3] - s[3])
+  end
+  vim.api.nvim_feedkeys(vim.keycode('<C-space>'), 'x', false)
+  local mode1, size1 = vim.fn.mode(), sel()
+  vim.api.nvim_feedkeys(vim.keycode('<C-space>'), 'x', false)
+  local mode2, size2 = vim.fn.mode(), sel()
+  vim.api.nvim_feedkeys(vim.keycode('<Esc>'), 'x', false)
+  local ok = mode1 == 'v' and mode2 == 'v' and size2 > size1
+  local n = vim.treesitter.get_node()
+  return ok, ('after 1st: mode=%s size=%d; after 2nd: mode=%s size=%d; node=%s ft=%s map=%s'):format(mode1, size1, mode2, size2, n and n:type(), vim.bo.filetype, vim.fn.maparg('<C-Space>', 'n') ~= '')
+end)
+
+check.global('no_cfg_dir', function()
+  return vim.fn.isdirectory(root .. '/lua/czernous/cfg') == 0, 'lua/czernous/cfg still exists'
+end)
+
+-- Loading a plugin spec file must only return a spec, not create keymaps.
+check.global('plugin_specs_have_no_side_effects', function()
+  local bad = {}
+  for _, f in ipairs(vim.fn.glob(root .. '/lua/czernous/plugins/*.lua', false, true)) do
+    local before = #check.recorded
+    local ok, ret = pcall(dofile, f)
+    local calls = #check.recorded - before
+    if not ok or type(ret) ~= 'table' or calls > 0 then
+      bad[#bad + 1] = vim.fn.fnamemodify(f, ':t') .. (calls > 0 and (' (sets ' .. calls .. ' keymaps)') or ' (no spec table)')
+    end
+    -- forget the re-recorded maps so other checks don't see them twice
+    for _ = 1, calls do table.remove(check.recorded) end
+  end
+  return #bad == 0, table.concat(bad, ', ')
+end)
+
 ---------------------------------------------------------------------------
 -- Language checks
 ---------------------------------------------------------------------------

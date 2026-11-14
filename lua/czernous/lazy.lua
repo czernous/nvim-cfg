@@ -16,5 +16,3 @@ require('lazy').setup('czernous.plugins', {
   -- health errors and skips an unnecessary bootstrap.
   rocks = { enabled = false },
 })
-require('czernous.cfg')
--- vim.cmd(":TSUpdate") -- sometimes TS does not start for some reason

@@ -1,3 +1,5 @@
+vim.g.mapleader = " " -- Space is the <leader> key (must be set before plugins load)
+
 vim.opt.guicursor = ""
 vim.opt.nu = true
 vim.opt.relativenumber = true
