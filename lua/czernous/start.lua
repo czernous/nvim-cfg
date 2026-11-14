@@ -98,8 +98,14 @@ function M.show(started_on_folder)
   vim.bo[buf].bufhidden = 'wipe' -- gone as soon as another buffer takes its place
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = 'czstart'
-  local restore = { number = vim.wo[win].number, relativenumber = vim.wo[win].relativenumber, signcolumn = vim.wo[win].signcolumn, cursorline = vim.wo[win].cursorline }
-  vim.wo[win].number, vim.wo[win].relativenumber, vim.wo[win].signcolumn, vim.wo[win].cursorline = false, false, 'no', false
+  -- A bare look for this window only (scope = 'local': the defaults that every
+  -- other window gets must not change).
+  local bare = { number = false, relativenumber = false, signcolumn = 'no', cursorline = false }
+  local restore = {}
+  for option, value in pairs(bare) do
+    restore[option] = vim.api.nvim_get_option_value(option, { win = win })
+    vim.api.nvim_set_option_value(option, value, { scope = 'local', win = win })
+  end
   render(buf, win)
 
   local group = vim.api.nvim_create_augroup('czernous_start', { clear = true })
@@ -110,7 +116,9 @@ function M.show(started_on_folder)
     buffer = buf,
     callback = function()
       if vim.api.nvim_win_is_valid(win) then
-        for option, value in pairs(restore) do vim.wo[win][option] = value end
+        for option, value in pairs(restore) do
+          vim.api.nvim_set_option_value(option, value, { scope = 'local', win = win })
+        end
       end
     end,
   })

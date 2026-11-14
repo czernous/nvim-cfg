@@ -1413,6 +1413,16 @@ check.global('options_set', function()
   return #bad == 0, table.concat(bad, ', ')
 end)
 
+-- The start screen's bare look must not leak into other windows.
+check.global('start_screen_does_not_change_defaults', function()
+  local out = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+    "autocmd VimEnter * ++once lua vim.defer_fn(function() local on_start = vim.bo.filetype vim.cmd('split') vim.cmd('enew') io.stdout:write(('START=%s global: number=%s cursorline=%s | new window: number=%s cursorline=%s signcolumn=%s'):format(on_start, tostring(vim.go.number), tostring(vim.go.cursorline), tostring(vim.wo.number), tostring(vim.wo.cursorline), vim.wo.signcolumn)) vim.cmd('qa!') end, 200)" },
+    { text = true, cwd = root }):wait(30000)
+  local text = (out.stdout or '') .. (out.stderr or '')
+  local ok = text:find('START=czstart') and text:find('global: number=true cursorline=true') and text:find('new window: number=true cursorline=true signcolumn=yes')
+  return ok ~= nil, text:sub(1, 220)
+end)
+
 check.global('explorer_is_oil', function()
   if vim.fn.exists(':Explore') == 2 then return false, 'the built-in explorer (netrw) is still loaded' end
   local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p'); vim.fn.writefile({ 'x' }, dir .. '/a.txt')
