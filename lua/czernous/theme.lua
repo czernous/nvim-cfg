@@ -199,6 +199,8 @@ local function apply(theme)
   M.current = theme
   style()
   applying = false
+  -- Let other parts of the UI (the statusline) pick up the new colours.
+  vim.api.nvim_exec_autocmds('User', { pattern = 'CzernousTheme', modeline = false })
 end
 
 --- Theme for the current terminal polarity (or the palette supplied from outside).

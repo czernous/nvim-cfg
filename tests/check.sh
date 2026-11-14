@@ -14,7 +14,8 @@ if [ "$1" = "--tripwires" ]; then
               deprecated:no_deprecated_api leak:no_buffer_state_leaks \
               whichkey:which_key_groups_used blocking_late:no_blocking_calls \
               blocking_static:no_blocking_calls leak_weak:no_buffer_state_leaks \
-              eager:only_theme_loads_at_startup opaque:ui_is_transparent; do
+              eager:only_theme_loads_at_startup opaque:ui_is_transparent \
+              statusline:statusline_is_cheap; do
     wire=${pair%%:*}; target=${pair##*:}
     out=$(CHECK_TRIPWIRE=$wire CHECK_ONLY="^$target\$" nvim --headless --cmd "luafile tests/check.lua" 2>&1)
     # The check must fail BECAUSE of the tripwire: its message has to name the

@@ -450,12 +450,6 @@ check.global('diagnostics_findable', function()
   local c = vim.diagnostic.config()
   if c.virtual_text then return false, 'virtual_text is on' end
   if not c.severity_sort then return false, 'severity_sort off' end
-  local lcfg = require('lualine').get_config()
-  local has = false
-  for _, sec in pairs(lcfg.sections) do
-    for _, comp in ipairs(sec) do if comp == 'diagnostics' or (type(comp) == 'table' and comp[1] == 'diagnostics') then has = true end end
-  end
-  if not has then return false, 'lualine has no diagnostics component' end
   vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua')
   local ns = vim.api.nvim_create_namespace('czcheck')
   vim.diagnostic.set(ns, 0, { { lnum = 4, col = 0, message = 'injected', severity = vim.diagnostic.severity.ERROR } })
@@ -1036,11 +1030,6 @@ check.global('no_buffer_state_leaks', function()
 end)
 
 -- Step-1 leftovers.
-check.global('lualine_follows_theme', function()
-  local theme = require('lualine').get_config().options.theme
-  return theme == 'auto', 'lualine theme = ' .. vim.inspect(theme)
-end)
-
 check.global('csharp_fixture_unpinned', function()
   local text = table.concat(vim.fn.readfile(fixtures .. '/csharp/fixture.csproj'), '\n')
   return not text:find('>net%d'), 'fixture.csproj names a specific .NET version'
@@ -1201,6 +1190,83 @@ check.global('completion_engine_is_blink', function()
   -- pure-Lua fuzzy matcher: no native binary downloaded or built
   local so = vim.fn.globpath(vim.fn.stdpath('data') .. '/lazy/blink.cmp', 'target/**/*.so', false, true)
   if #so > 0 then bad[#bad + 1] = 'native binary present: ' .. so[1] end
+  return #bad == 0, table.concat(bad, '; ')
+end)
+
+---------------------------------------------------------------------------
+-- Statusline: built in, informative, and free while you move around
+---------------------------------------------------------------------------
+local function rendered_statusline()
+  return vim.api.nvim_eval_statusline(vim.o.statusline, {}).str
+end
+
+check.global('statusline_native', function()
+  local lock = table.concat(vim.fn.readfile(root .. '/lazy-lock.json'), '\n')
+  if lock:find('lualine', 1, true) then return false, 'lualine still in lockfile' end
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua')
+  vim.api.nvim_win_set_cursor(0, { 2, 3 }); vim.wait(100)
+  local text = rendered_statusline()
+  local ok = text:find('NORMAL') and text:find('init.lua', 1, true) and text:find('2:4', 1, true) and text:find('lua', 1, true)
+  return ok ~= nil, 'rendered: [' .. text .. '] (want mode, file name, filetype, 2:4)'
+end)
+
+check.global('statusline_shows_problems_and_branch', function()
+  -- a file outside any git repo, so the branch shown is the one set below
+  local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p')
+  vim.fn.writefile({ 'local a = 1', 'local b = 2', 'return a + b' }, dir .. '/s.lua')
+  vim.o.columns = 140
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/s.lua')
+  local buf = vim.api.nvim_get_current_buf()
+  local ns = vim.api.nvim_create_namespace('czcheck_stl')
+  vim.diagnostic.set(ns, buf, {
+    { lnum = 0, col = 0, message = 'e1', severity = vim.diagnostic.severity.ERROR },
+    { lnum = 1, col = 0, message = 'e2', severity = vim.diagnostic.severity.ERROR },
+    { lnum = 2, col = 0, message = 'w1', severity = vim.diagnostic.severity.WARN },
+  })
+  vim.b[buf].gitsigns_head = 'feature/x%y'
+  vim.api.nvim_exec_autocmds('User', { pattern = 'GitSignsUpdate', modeline = false })
+  vim.wait(150)
+  local text = rendered_statusline()
+  vim.diagnostic.reset(ns, buf)
+  local ok = text:find('E2', 1, true) and text:find('W1', 1, true) and text:find('feature/x%y', 1, true)
+  return ok ~= nil, 'rendered: [' .. text .. '] (want E2, W1 and the branch, with % shown literally)'
+end)
+
+check.global('statusline_special_buffers', function()
+  local before = #check.errors
+  for _, cmd in ipairs({ 'help help', 'Ex', 'terminal', 'enew' }) do
+    vim.cmd('silent! %bwipeout!')
+    local ok, err = pcall(vim.cmd, cmd)
+    if not ok then return false, cmd .. ': ' .. tostring(err) end
+    vim.wait(150)
+    local ok2, text = pcall(rendered_statusline)
+    if not ok2 or text == '' then return false, cmd .. ': statusline failed: ' .. tostring(text) end
+  end
+  check.snapshot_messages()
+  return #check.errors == before, table.concat(check.errors, ' | '):sub(1, 200)
+end)
+
+-- Moving the cursor must cost the statusline nothing: no handlers on cursor
+-- events, and drawing it runs no Lua (so allocates nothing).
+check.global('statusline_is_cheap', function()
+  local bad = {}
+  for _, ev in ipairs({ 'CursorMoved', 'CursorMovedI', 'TextChanged', 'TextChangedI', 'WinScrolled' }) do
+    for _, au in ipairs(vim.api.nvim_get_autocmds({ event = ev })) do
+      if au.group_name == 'czernous_statusline' then bad[#bad + 1] = ev .. ' handler (' .. tostring(au.desc) .. ')' end
+    end
+  end
+  if vim.o.statusline:find('v:lua', 1, true) or vim.o.statusline:find('%{', 1, true) then
+    bad[#bad + 1] = 'statusline evaluates code on every redraw: ' .. vim.o.statusline:sub(1, 60)
+  end
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua'); vim.wait(100)
+  for _ = 1, 30 do rendered_statusline() end
+  collectgarbage('collect'); collectgarbage('collect'); collectgarbage('stop')
+  local b = collectgarbage('count')
+  for _ = 1, 500 do rendered_statusline() end
+  local per = (collectgarbage('count') - b) * 1024 / 500
+  collectgarbage('restart')
+  -- nvim_eval_statusline itself returns a table+string (~150 B); the config may add nothing on top
+  if per > 400 then bad[#bad + 1] = ('%d B allocated per redraw'):format(per) end
   return #bad == 0, table.concat(bad, '; ')
 end)
 

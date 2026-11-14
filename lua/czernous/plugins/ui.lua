@@ -1,4 +1,4 @@
--- Theme renderer, statusline, icons, keymap popup.
+-- Colour schemes, icons, keymap popup. (The statusline is built in: statusline.lua.)
 return {
   -- Colour schemes. Neither is loaded at a normal start: theme.lua replays its
   -- cached result. They load only when that cache has to be rebuilt.
@@ -7,18 +7,6 @@ return {
   -- Neovim). Not used unless $NVIM_BASE16_PALETTE is set.
   { 'nvim-mini/mini.base16' },
   { 'nvim-tree/nvim-web-devicons' },
-  {
-    'nvim-lualine/lualine.nvim',
-    event = 'VeryLazy', -- just after the first screen
-    dependencies = { 'nvim-tree/nvim-web-devicons' },
-    opts = {
-      options = {
-        theme = 'auto', -- follow whatever theme.lua applies
-        component_separators = '|',
-        section_separators = '',
-      },
-    },
-  },
   {
     -- Press <leader> and wait: shows what the next key does.
     'folke/which-key.nvim',

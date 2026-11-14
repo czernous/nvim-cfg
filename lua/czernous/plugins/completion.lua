@@ -26,9 +26,22 @@ return {
       sources = {
         default = { 'lsp', 'path', 'snippets' },
         providers = {
-          -- Snippets match loosely ("pri" fuzzy-matches "copyright"); keep them
-          -- well below real code suggestions so Enter never picks one by surprise.
-          snippets = { score_offset = -20, min_keyword_length = 2 },
+          -- Snippets are matched loosely by default ("Pr" finds "coPyRight"), which
+          -- is noise. Offer one only when what you typed is the START of its name,
+          -- never right after a `.` or other trigger character, and rank them
+          -- below real code suggestions so Enter never picks one by surprise.
+          snippets = {
+            score_offset = -20,
+            min_keyword_length = 2,
+            should_show_items = function(ctx) return ctx.trigger.initial_kind ~= 'trigger_character' end,
+            transform_items = function(ctx, items)
+              local typed = (ctx.line:sub(1, ctx.cursor[2]):match('[%w_]+$') or ''):lower()
+              if typed == '' then return {} end
+              return vim.tbl_filter(function(item)
+                return (item.filterText or item.label or ''):lower():sub(1, #typed) == typed
+              end, items)
+            end,
+          },
         },
       },
       completion = {
