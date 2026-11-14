@@ -72,7 +72,7 @@ M.groups = {
       { 'n', '<leader>Y', [["+Y]], desc = 'Yank line to system clipboard' },
       { 'n', '<leader>d', [["_d]], desc = 'Delete without yanking' },
       { 'n', '<leader>s', [[:%s/\<<C-r><C-w>\>/<C-r><C-w>/gI<Left><Left><Left>]], desc = 'Substitute word under cursor' },
-      { 'n', '<leader>f', function() require('czernous.lsp').format() end, desc = 'Format buffer (LSP, else Neoformat)' },
+      { 'n', '<leader>f', function() require('czernous.format').format() end, desc = 'Format buffer (project formatter / LSP)' },
       { 'n', '<leader>x', '<cmd>!chmod +x %<CR>', desc = 'Make file executable' },
       { 'n', '<leader><leader>', function()
         if vim.bo.filetype == 'lua' or vim.bo.filetype == 'vim' then
