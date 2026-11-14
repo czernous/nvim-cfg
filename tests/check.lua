@@ -619,6 +619,56 @@ check.global('incremental_selection_restarts_elsewhere', function()
   return s == 5 and e == 5, ('selection lines %d-%d (want 5-5)'):format(s, e)
 end)
 
+-- Search keys look in the current file's project, not where Neovim started.
+check.global('project_root_nearest', function()
+  local ok, project = pcall(require, 'czernous.project')
+  if not ok or not project.root then return false, 'czernous.project.root missing' end
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir .. '/mod/src/main/java', 'p')
+  vim.fn.writefile({ '' }, dir .. '/settings.gradle.kts')
+  vim.fn.writefile({ '' }, dir .. '/mod/build.gradle.kts')
+  vim.fn.writefile({ 'class A {}' }, dir .. '/mod/src/main/java/A.java')
+  local cases = {
+    { fixtures .. '/go/main.go', fixtures .. '/go' },
+    { fixtures .. '/rust/src/main.rs', fixtures .. '/rust' },
+    { fixtures .. '/csharp/Program.cs', fixtures .. '/csharp' },
+    { dir .. '/mod/src/main/java/A.java', dir },
+    { root .. '/lua/czernous/init.lua', root }, -- falls back to the git root
+  }
+  local bad = {}
+  for _, c in ipairs(cases) do
+    vim.cmd('silent! %bwipeout!'); vim.cmd.edit(c[1])
+    local got = project.root(0)
+    if vim.fs.normalize(got) ~= vim.fs.normalize(c[2]) then bad[#bad + 1] = c[1] .. ' -> ' .. got end
+  end
+  return #bad == 0, table.concat(bad, ', ')
+end)
+
+check.global('search_keys_use_project_root', function()
+  local builtin = require('telescope.builtin')
+  local saw = {}
+  local real = {}
+  for _, name in ipairs({ 'find_files', 'live_grep', 'grep_string' }) do
+    real[name] = builtin[name]
+    builtin[name] = function(opts) saw[name] = opts and opts.cwd end
+  end
+  local cwd = vim.fn.getcwd()
+  vim.cmd.cd(vim.fn.tempname():match('^(.*)/')) -- somewhere unrelated
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/go/main.go')
+  local fn = vim.fn.input
+  vim.fn.input = function() return 'add' end
+  for _, k in ipairs({ '<leader>pf', '<leader>pg', '<leader>ps' }) do vim.api.nvim_feedkeys(vim.keycode(k), 'x', false) end
+  vim.fn.input = fn
+  vim.cmd.cd(cwd)
+  for name, f in pairs(real) do builtin[name] = f end
+  local want = vim.fs.normalize(fixtures .. '/go')
+  local bad = {}
+  for _, name in ipairs({ 'find_files', 'live_grep', 'grep_string' }) do
+    if not saw[name] or vim.fs.normalize(saw[name]) ~= want then bad[#bad + 1] = name .. ' cwd=' .. tostring(saw[name]) end
+  end
+  return #bad == 0, table.concat(bad, ', ')
+end)
+
 check.global('no_cfg_dir', function()
   return vim.fn.isdirectory(root .. '/lua/czernous/cfg') == 0, 'lua/czernous/cfg still exists'
 end)

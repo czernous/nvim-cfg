@@ -26,6 +26,17 @@ local function telescope(name, opts)
   return pickers[id]
 end
 
+-- Telescope picker that searches the current file's project (see project.lua);
+-- the window title shows which folder is searched.
+local function in_project(name, title, extra)
+  pickers[name .. ':project'] = pickers[name .. ':project'] or function()
+    local root = require('czernous.project').root(0)
+    local opts = vim.tbl_extend('force', { cwd = root, prompt_title = title .. ' in ' .. vim.fn.fnamemodify(root, ':~') }, extra and extra() or {})
+    require('telescope.builtin')[name](opts)
+  end
+  return pickers[name .. ':project']
+end
+
 local function harpoon() return require('harpoon') end
 local function gs() return require('gitsigns') end
 local function ts_select(obj) return function() require('nvim-treesitter-textobjects.select').select_textobject(obj, 'textobjects') end end
@@ -36,9 +47,9 @@ M.groups = {
     name = 'Files & search',
     keys = {
       { 'n', '<leader>pv', '<cmd>Ex<cr>', desc = 'Project view (file explorer)' },
-      { 'n', '<leader>pf', telescope('find_files'), desc = 'Find files' },
-      { 'n', '<leader>pg', telescope('live_grep'), desc = 'Grep project (live)' },
-      { 'n', '<leader>ps', function() require('telescope.builtin').grep_string({ search = vim.fn.input('Grep > ') }) end, desc = 'Grep project for a word' },
+      { 'n', '<leader>pf', in_project('find_files', 'Find files'), desc = "Find files (this file's project)" },
+      { 'n', '<leader>pg', in_project('live_grep', 'Grep'), desc = "Grep as you type (this file's project)" },
+      { 'n', '<leader>ps', in_project('grep_string', 'Search', function() return { search = vim.fn.input('Grep > ') } end), desc = "Search for a word (this file's project)" },
       { 'n', '<leader>pb', telescope('buffers'), desc = 'Find open buffer' },
       { 'n', '<leader>ph', telescope('help_tags'), desc = 'Find help' },
       { 'n', '<leader>?', telescope('oldfiles'), desc = 'Recently opened files' },
