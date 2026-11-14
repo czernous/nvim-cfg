@@ -33,13 +33,24 @@ function M.setup()
     callback = function(event)
       require('czernous.keymaps').lsp(event.buf)
       vim.api.nvim_buf_create_user_command(event.buf, 'Format', function()
-        vim.lsp.buf.format()
-      end, { desc = 'Format current buffer with LSP' })
+        require('czernous.format').format() -- same as <leader>f
+      end, { desc = 'Format current buffer (same as <leader>f)' })
     end,
   })
 
-  -- nvim-cmp completion capabilities for every server.
-  vim.lsp.config('*', { capabilities = require('cmp_nvim_lsp').default_capabilities() })
+  vim.lsp.config('*', {
+    -- nvim-cmp completion capabilities for every server.
+    capabilities = require('cmp_nvim_lsp').default_capabilities(),
+    -- A server that crashes before it finishes starting (e.g. a rustup proxy
+    -- without the component installed) is disabled for this session, instead
+    -- of being restarted -- and warning -- for every file you open.
+    on_exit = function(code, _, client_id)
+      local client = vim.lsp.get_client_by_id(client_id)
+      if code ~= 0 and client and not client.initialized then
+        vim.schedule(function() vim.lsp.enable(client.name, false) end)
+      end
+    end,
+  })
 
   -- Find which server programs exist WITHOUT blocking startup: on machines
   -- whose $PATH has slow entries (network or Windows mounts) every miss costs

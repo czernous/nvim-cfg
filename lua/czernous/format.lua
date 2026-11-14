@@ -9,6 +9,8 @@ local M = {}
 
 --- Root of a Spotless-enabled Gradle project containing `buf`, or nil.
 local function spotless_root(buf)
+  -- Only real files (not [No Name], :help, terminals...).
+  if vim.bo[buf].buftype ~= '' or vim.api.nvim_buf_get_name(buf) == '' then return nil end
   local root = vim.fs.root(buf, { 'gradlew' })
   if not root then return nil end
   for _, name in ipairs({ 'build.gradle.kts', 'build.gradle' }) do
@@ -38,6 +40,11 @@ local function spotless(buf, root)
   }, { cwd = root, stdin = input, text = true }, function(r)
     vim.schedule(function()
       local status = (r.stderr or ''):match('IS DIRTY') or (r.stderr or ''):match('IS CLEAN')
+      if r.code == 0 and not status then
+        -- File isn't covered by any Spotless target (e.g. .yml, .md): use the LSP.
+        if vim.api.nvim_buf_is_valid(buf) then vim.api.nvim_buf_call(buf, function() fallback(buf) end) end
+        return
+      end
       if r.code ~= 0 or not status then
         vim.notify('Spotless failed:\n' .. vim.trim(r.stderr or ''):sub(1, 400), vim.log.levels.WARN)
         return
@@ -45,6 +52,10 @@ local function spotless(buf, root)
       if status == 'IS CLEAN' or not vim.api.nvim_buf_is_valid(buf) then return end
       if vim.api.nvim_buf_get_changedtick(buf) ~= tick then
         vim.notify('Buffer changed while formatting; run <leader>f again', vim.log.levels.WARN)
+        return
+      end
+      if vim.trim(r.stdout or '') == '' then
+        vim.notify('Spotless reported changes but returned no text; buffer left as is', vim.log.levels.WARN)
         return
       end
       local lines = vim.split((r.stdout:gsub('\n$', '')), '\n', { plain = true })

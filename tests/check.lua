@@ -32,9 +32,11 @@ vim.keymap.set = function(mode, lhs, rhs, opts)
 end
 
 check.startup_lookups = {}
+check.exe_calls = {}
 local orig_executable = vim.fn.executable
 vim.fn.executable = function(name)
   if vim.v.vim_did_enter == 0 then table.insert(check.startup_lookups, name) end
+  check.exe_calls[name] = (check.exe_calls[name] or 0) + 1
   return orig_executable(name)
 end
 
@@ -45,6 +47,21 @@ vim.notify = function(msg, level, o)
   end
   return orig_notify(msg, level, o)
 end
+
+--- Copy error lines from :messages into check.errors (call before any `messages clear`).
+--- Errors raised in vim.schedule callbacks only ever reach :messages.
+function check.snapshot_messages()
+  local msgs = vim.api.nvim_exec2('messages', { output = true }).output
+  for line in msgs:gmatch('[^\n]+') do
+    if line:match('^E%d+:') or line:match('^Error') or line:find('callback: ', 1, true)
+      or line:find('stack traceback', 1, true) or line:find('install/[%w_]+ error') then
+      table.insert(check.errors, line)
+    end
+  end
+end
+
+-- CHECK_CANARY=1 injects a scheduled error at startup to prove it gets caught.
+if vim.env.CHECK_CANARY == '1' then vim.schedule(function() error('canary error') end) end
 
 --- Keymaps created by the config itself (directly or via lazy.nvim `keys`).
 function check.user_maps()
@@ -276,13 +293,18 @@ check.global('broken_server_is_quiet', function()
   vim.notify = function(m, l, o) if l == vim.log.levels.WARN then warns = warns + 1 end return n(m, l, o) end
   vim.lsp.config('fake_ls', { cmd = { 'fake-ls' }, filetypes = { 'czfake' } })
   vim.lsp.enable('fake_ls')
-  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/x.czfake'); vim.bo.filetype = 'czfake'
-  vim.wait(3000)
+  -- Several buffers: a dead server must not be restarted (and warn) for each one.
+  vim.cmd('silent! %bwipeout!')
+  for i = 1, 3 do
+    vim.cmd.edit(dir .. '/x' .. i .. '.czfake'); vim.bo.filetype = 'czfake'
+    vim.wait(1500)
+  end
   vim.lsp.enable('fake_ls', false)
   vim.notify = n; vim.env.PATH = old
   local msgs = vim.api.nvim_exec2('messages', { output = true }).output
   local errs = #check.errors - before
   for line in msgs:gmatch('[^\n]+') do if line:match('^E%d+:') or line:match('^Error') then errs = errs + 1 end end
+  check.snapshot_messages()
   vim.cmd('messages clear')
   return errs == 0 and warns <= 1, ('errors=%d warns=%d'):format(errs, warns)
 end)
@@ -525,6 +547,78 @@ check.global('special_buffers_are_quiet', function()
   return #check.errors == before, table.concat(check.errors, ' | ')
 end)
 
+check.global('format_spotless_uncovered_falls_back', function()
+  -- Hook exits 0 with no IS DIRTY/IS CLEAN = file not in any Spotless target.
+  local dir = fake_spotless_project({ '#!/bin/sh', 'cat >/dev/null', 'exit 0' })
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/src/x.txt')
+  local called, warned = false, false
+  vim.api.nvim_create_user_command('Neoformat', function() called = true end, { force = true })
+  local n = vim.notify
+  vim.notify = function(m, l, o) if l == vim.log.levels.WARN then warned = true end return n(m, l, o) end
+  require('czernous.format').format()
+  vim.wait(3000, function() return called end, 50)
+  vim.notify = n
+  return called and not warned, ('fell back=%s warned=%s'):format(called, warned)
+end)
+
+check.global('format_spotless_empty_output_keeps_buffer', function()
+  local dir = fake_spotless_project({ '#!/bin/sh', 'cat >/dev/null', 'echo "IS DIRTY" >&2' })
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/src/x.txt')
+  require('czernous.format').format()
+  vim.wait(1500)
+  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+  return vim.deep_equal(lines, { 'hello', 'world' }), vim.inspect(lines)
+end)
+
+check.global('format_spotless_skips_unnamed_buffers', function()
+  local dir = fake_spotless_project({ '#!/bin/sh', 'touch "$0.ran"', 'cat >/dev/null', 'echo "IS CLEAN" >&2' })
+  local cwd = vim.fn.getcwd()
+  vim.cmd('silent! %bwipeout!'); vim.cmd.cd(dir); vim.cmd('enew')
+  local called = false
+  vim.api.nvim_create_user_command('Neoformat', function() called = true end, { force = true })
+  require('czernous.format').format()
+  vim.wait(1000)
+  vim.cmd.cd(cwd)
+  local ran = vim.fn.filereadable(dir .. '/gradlew.ran') == 1
+  return called and not ran, ('fallback=%s gradlew ran=%s'):format(called, ran)
+end)
+
+check.global('format_command_matches_key', function()
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua')
+  vim.wait(20000, function() return #vim.lsp.get_clients({ bufnr = 0 }) > 0 end, 100)
+  local fmt = require('czernous.format')
+  local real, called = fmt.format, false
+  fmt.format = function() called = true end
+  local ok, err = pcall(vim.cmd, 'Format')
+  fmt.format = real
+  return ok and called, ok and ':Format did not use czernous.format' or tostring(err)
+end)
+
+check.global('treesitter_cli_lookup_cached', function()
+  local before = check.exe_calls['tree-sitter'] or 0
+  local nts = require('nvim-treesitter')
+  local real = nts.install
+  nts.install = function() return { await = function() end } end
+  for _, ft in ipairs({ 'TelescopePrompt', 'qf', 'czunknown', 'TelescopePrompt' }) do
+    vim.cmd('enew'); vim.bo.filetype = ft
+  end
+  nts.install = real
+  local calls = (check.exe_calls['tree-sitter'] or 0) - before
+  return calls == 0, ('tree-sitter looked up %d times'):format(calls)
+end)
+
+-- Grow selection somewhere new must start from the new place, not the old one.
+check.global('incremental_selection_restarts_elsewhere', function()
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua')
+  vim.api.nvim_win_set_cursor(0, { 2, 9 })
+  vim.api.nvim_feedkeys(vim.keycode('<C-space><Esc>'), 'x', false)
+  vim.api.nvim_win_set_cursor(0, { 5, 10 }) -- inside add(1, 2)
+  vim.api.nvim_feedkeys(vim.keycode('v<C-space>'), 'x', false)
+  local s, e = vim.fn.getpos('v')[2], vim.fn.getpos('.')[2]
+  vim.api.nvim_feedkeys(vim.keycode('<Esc>'), 'x', false)
+  return s == 5 and e == 5, ('selection lines %d-%d (want 5-5)'):format(s, e)
+end)
+
 check.global('no_cfg_dir', function()
   return vim.fn.isdirectory(root .. '/lua/czernous/cfg') == 0, 'lua/czernous/cfg still exists'
 end)
@@ -636,10 +730,7 @@ local function run()
   end
 
   -- Errors last, so everything above had a chance to produce them.
-  local msgs = vim.api.nvim_exec2('messages', { output = true }).output
-  for line in msgs:gmatch('[^\n]+') do
-    if line:match('^E%d+:') or line:match('^Error') then table.insert(check.errors, line) end
-  end
+  check.snapshot_messages()
   report(#check.errors == 0 and 'PASS' or 'FAIL', 'no_error_messages', table.concat(check.errors, ' | '))
 
   local counts = { PASS = 0, FAIL = 0, SKIP = 0 }

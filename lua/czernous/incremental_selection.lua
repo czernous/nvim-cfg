@@ -35,11 +35,22 @@ function M.init()
   select_node(node)
 end
 
+--- Start (row, col) of the current visual selection, 0-based.
+local function selection_start()
+  local a, b = vim.fn.getpos('v'), vim.fn.getpos('.')
+  if b[2] < a[2] or (b[2] == a[2] and b[3] < a[3]) then a = b end
+  return a[2] - 1, a[3] - 1
+end
+
 function M.grow()
   local buf = vim.api.nvim_get_current_buf()
   local stack = selections[buf]
   if not stack or #stack == 0 then return M.init() end
   local cur = stack[#stack]
+  -- Selection is somewhere else than last time: start over from here.
+  local row, col = selection_start()
+  local nrow, ncol = cur:range()
+  if row ~= nrow or col ~= ncol then return M.init() end
   local parent = cur:parent()
   while parent and ranges_equal({ parent:range() }, { cur:range() }) do
     parent = parent:parent()
