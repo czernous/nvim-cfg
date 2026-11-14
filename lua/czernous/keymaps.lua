@@ -82,6 +82,7 @@ M.groups = {
         end
       end, desc = 'Source current Lua/Vim file' },
       { 'n', '<leader>u', '<cmd>UndotreeToggle<cr>', desc = 'Undo tree' },
+      { 'n', '<leader>tT', function() require('czernous.theme').toggle_transparency() end, desc = 'Toggle transparent background' },
     },
   },
   {

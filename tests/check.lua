@@ -402,6 +402,52 @@ check.global('owner_key_choices', function()
   return #bad == 0, table.concat(bad, ', ')
 end)
 
+-- Theme: one spot; transparent editor background that survives theme changes.
+local function hl(name) return vim.api.nvim_get_hl(0, { name = name, link = false }) end
+
+check.global('transparent_normal', function()
+  local ok, theme = pcall(require, 'czernous.theme')
+  if not ok or type(theme) ~= 'table' or not theme.opts then return false, 'czernous.theme has no opts' end
+  if not theme.opts.transparent then return false, 'transparent is off by default' end
+  local n = hl('Normal')
+  return n.bg == nil and n.fg ~= nil, ('Normal bg=%s fg=%s'):format(tostring(n.bg), tostring(n.fg))
+end)
+
+check.global('floats_keep_bg', function()
+  local bad = {}
+  for _, g in ipairs({ 'NormalFloat', 'Pmenu' }) do if hl(g).bg == nil then bad[#bad + 1] = g end end
+  return #bad == 0, 'no background: ' .. table.concat(bad, ', ')
+end)
+
+check.global('survives_colorscheme_change', function()
+  local theme = require('czernous.theme')
+  vim.cmd.colorscheme('catppuccin')
+  local bg = hl('Normal').bg
+  vim.cmd.colorscheme(theme.opts.colorscheme)
+  return bg == nil, 'catppuccin Normal bg=' .. tostring(bg)
+end)
+
+check.global('toggle_restores_bg', function()
+  local theme = require('czernous.theme')
+  if not theme.toggle_transparency then return false, 'toggle_transparency missing' end
+  theme.toggle_transparency()
+  local opaque = hl('Normal').bg
+  theme.toggle_transparency()
+  local again = hl('Normal').bg
+  return opaque ~= nil and again == nil, ('after toggle bg=%s, after 2nd toggle bg=%s'):format(tostring(opaque), tostring(again))
+end)
+
+check.global('special_buffers_are_quiet', function()
+  local before = #check.errors
+  for _, cmd in ipairs({ 'help help', 'Ex', 'terminal', 'enew' }) do
+    vim.cmd('silent! %bwipeout!')
+    local ok, err = pcall(vim.cmd, cmd)
+    if not ok then return false, cmd .. ': ' .. tostring(err) end
+    vim.wait(300)
+  end
+  return #check.errors == before, table.concat(check.errors, ' | ')
+end)
+
 check.global('no_cfg_dir', function()
   return vim.fn.isdirectory(root .. '/lua/czernous/cfg') == 0, 'lua/czernous/cfg still exists'
 end)

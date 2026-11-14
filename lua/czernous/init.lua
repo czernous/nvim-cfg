@@ -2,5 +2,5 @@
 require('czernous.options')
 require('czernous.keymaps').setup()
 require('czernous.lazy')
-require('czernous.theme')
+require('czernous.theme').setup()
 require('czernous.lsp').setup()
