@@ -138,6 +138,20 @@ updates and Nix packaging have as little as possible to go wrong.
 | Git | fugitive + rhubarb + gitsigns | fugitive + gitsigns; drop rhubarb unless owner uses `:GBrowse` | lean |
 | Keep (lazy-loaded) | harpoon, undotree, which-key, gitsigns, lazydev, mason, fidget, treesitter-context, vim-sleuth, lualine, devicons | keep; audit checks cost and lazy-load trigger | owner uses them / small |
 
+## Wider audience (owner, 2026-11-14) — shapes 2a choices, built in stage 3
+
+The owner will later provide Nix configs for WSL as the default dev environment for
+other developers. Those developers either keep their own Neovim config/plugins or use
+this one; either way theming must be consistent. Consequences for 2a:
+
+- The theme palette is **plain data supplied by the environment** (Stylix), readable by
+  any Neovim config — this config is just one consumer. No theme logic that only works
+  inside this config.
+- Nothing in the core may assume it runs on the owner's machine or for the owner
+  (already required); personal preferences (key choices, pinned files, etc.) should be
+  easy to tell apart from the core so a later "shared core + personal layer" split is
+  cheap. No such split is built in 2a.
+
 ## Non-goals (2a)
 
 - New features or UI changes (2b), the Problems workflow (2b), update jobs (2c),
