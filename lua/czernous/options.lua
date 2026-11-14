@@ -12,6 +12,16 @@ vim.opt.expandtab = true
 vim.opt.smartindent = true
 
 
--- Disable diagnostic gutter signs (correct API; `vim.diagnostic.signs = false` was a no-op).
-vim.diagnostic.config({ signs = false })
+-- Always show the sign column, so git markers appearing doesn't shift the text.
+vim.opt.signcolumn = 'yes'
+
+-- Diagnostics: no inline (virtual) text and no gutter signs -- by choice, for
+-- speed and calm. Find errors with: the counts in the statusline, underlines,
+-- ]d / [d (jump + popup), <leader>vd (popup) and <leader>ttx (Trouble list).
+vim.diagnostic.config({
+  signs = false,
+  virtual_text = false,
+  severity_sort = true,
+  float = { border = 'rounded', source = true },
+})
 

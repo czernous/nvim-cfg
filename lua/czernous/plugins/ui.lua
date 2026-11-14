@@ -25,19 +25,9 @@ return {
     -- Press <leader> and wait: shows what the next key does.
     'folke/which-key.nvim',
     event = 'VeryLazy',
-    opts = {
-      spec = {
-        { '<leader>c', group = '[C]ode' },
-        { '<leader>d', group = '[D]ocument' },
-        { '<leader>g', group = '[G]it' },
-        { '<leader>h', group = 'Git [H]unk' },
-        { '<leader>r', group = '[R]ename' },
-        { '<leader>s', group = '[S]earch' },
-        { '<leader>t', group = '[T]oggle' },
-        { '<leader>w', group = '[W]orkspace' },
-        { '<leader>', group = 'VISUAL <leader>', mode = 'v' },
-        { '<leader>h', group = 'Git [H]unk', mode = 'v' },
-      },
-    },
+    opts = function()
+      -- group labels come from keymaps.lua
+      return { spec = require('czernous.keymaps').which_key() }
+    end,
   },
 }

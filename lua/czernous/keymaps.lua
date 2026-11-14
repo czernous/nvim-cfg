@@ -37,11 +37,10 @@ M.groups = {
     keys = {
       { 'n', '<leader>pv', '<cmd>Ex<cr>', desc = 'Project view (file explorer)' },
       { 'n', '<leader>pf', telescope('find_files'), desc = 'Find files' },
-      { 'n', '<C-p>', telescope('find_files'), desc = 'Find files' },
       { 'n', '<leader>pg', telescope('live_grep'), desc = 'Grep project (live)' },
       { 'n', '<leader>ps', function() require('telescope.builtin').grep_string({ search = vim.fn.input('Grep > ') }) end, desc = 'Grep project for a word' },
-      { 'n', '<leader>fb', telescope('buffers'), desc = 'Find open buffer' },
-      { 'n', '<leader>fh', telescope('help_tags'), desc = 'Find help' },
+      { 'n', '<leader>pb', telescope('buffers'), desc = 'Find open buffer' },
+      { 'n', '<leader>ph', telescope('help_tags'), desc = 'Find help' },
       { 'n', '<leader>?', telescope('oldfiles'), desc = 'Recently opened files' },
       { 'n', '<leader>/', function()
         require('telescope.builtin').current_buffer_fuzzy_find(require('telescope.themes').get_dropdown({ winblend = 10, previewer = false }))
@@ -57,8 +56,8 @@ M.groups = {
       { 'n', '<leader>2', function() harpoon():list():select(2) end, desc = 'Harpoon: file 2' },
       { 'n', '<leader>3', function() harpoon():list():select(3) end, desc = 'Harpoon: file 3' },
       { 'n', '<leader>4', function() harpoon():list():select(4) end, desc = 'Harpoon: file 4' },
-      { 'n', '<C-S-P>', function() harpoon():list():prev() end, desc = 'Harpoon: previous file' },
-      { 'n', '<C-S-N>', function() harpoon():list():next() end, desc = 'Harpoon: next file' },
+      { 'n', '<leader>[', function() harpoon():list():prev() end, desc = 'Harpoon: previous file' },
+      { 'n', '<leader>]', function() harpoon():list():next() end, desc = 'Harpoon: next file' },
     },
   },
   {
@@ -73,10 +72,15 @@ M.groups = {
       { 'n', '<leader>Y', [["+Y]], desc = 'Yank line to system clipboard' },
       { 'n', '<leader>d', [["_d]], desc = 'Delete without yanking' },
       { 'n', '<leader>s', [[:%s/\<<C-r><C-w>\>/<C-r><C-w>/gI<Left><Left><Left>]], desc = 'Substitute word under cursor' },
-      { 'n', '<leader>f', function() vim.lsp.buf.format() end, desc = 'Format buffer (LSP)' },
-      { 'n', '<leader>nf', '<cmd>Neoformat<cr>', desc = 'Format buffer (Neoformat)' },
+      { 'n', '<leader>f', function() require('czernous.lsp').format() end, desc = 'Format buffer (LSP, else Neoformat)' },
       { 'n', '<leader>x', '<cmd>!chmod +x %<CR>', desc = 'Make file executable' },
-      { 'n', '<leader><leader>', function() vim.cmd('so') end, desc = 'Source current file' },
+      { 'n', '<leader><leader>', function()
+        if vim.bo.filetype == 'lua' or vim.bo.filetype == 'vim' then
+          vim.cmd('source %')
+        else
+          vim.notify('Nothing to source: not a Lua/Vim file', vim.log.levels.WARN)
+        end
+      end, desc = 'Source current Lua/Vim file' },
       { 'n', '<leader>u', '<cmd>UndotreeToggle<cr>', desc = 'Undo tree' },
     },
   },
@@ -102,12 +106,11 @@ M.groups = {
       { 'n', ']d', function() vim.diagnostic.jump({ count = 1, float = true }) end, desc = 'Next diagnostic' },
       { 'n', '<leader>vd', vim.diagnostic.open_float, desc = 'View diagnostic message' },
       { 'n', '<leader>q', vim.diagnostic.setloclist, desc = 'Diagnostics to location list' },
-      { 'n', '<leader>ttx', '<cmd>Trouble diagnostics toggle<cr>', plugin = 'trouble.nvim', desc = 'Trouble: diagnostics' },
-      { 'n', '<leader>ttw', '<cmd>Trouble diagnostics toggle<cr>', plugin = 'trouble.nvim', desc = 'Trouble: workspace diagnostics' },
+      { 'n', '<leader>ttx', '<cmd>Trouble diagnostics toggle<cr>', plugin = 'trouble.nvim', desc = 'Trouble: diagnostics (all files)' },
       { 'n', '<leader>ttd', '<cmd>Trouble diagnostics toggle filter.buf=0<cr>', plugin = 'trouble.nvim', desc = 'Trouble: buffer diagnostics' },
       { 'n', '<leader>ttl', '<cmd>Trouble loclist toggle<cr>', plugin = 'trouble.nvim', desc = 'Trouble: location list' },
       { 'n', '<leader>ttq', '<cmd>Trouble qflist toggle<cr>', plugin = 'trouble.nvim', desc = 'Trouble: quickfix list' },
-      { 'n', 'tgR', '<cmd>Trouble lsp_references toggle<cr>', plugin = 'trouble.nvim', desc = 'Trouble: LSP references' },
+      { 'n', '<leader>ttr', '<cmd>Trouble lsp_references toggle<cr>', plugin = 'trouble.nvim', desc = 'Trouble: LSP references' },
     },
   },
   {
@@ -135,8 +138,8 @@ M.groups = {
       { { 'n', 'x', 'o' }, '[[', ts_move('goto_previous_start', '@class.outer'), desc = 'Previous class start' },
       { { 'n', 'x', 'o' }, '[M', ts_move('goto_previous_end', '@function.outer'), desc = 'Previous function end' },
       { { 'n', 'x', 'o' }, '[]', ts_move('goto_previous_end', '@class.outer'), desc = 'Previous class end' },
-      { 'n', '<leader>swn', function() require('nvim-treesitter-textobjects.swap').swap_next('@parameter.inner') end, desc = 'Swap with next parameter' },
-      { 'n', '<leader>swp', function() require('nvim-treesitter-textobjects.swap').swap_previous('@parameter.inner') end, desc = 'Swap with previous parameter' },
+      { 'n', '<leader>cn', function() require('nvim-treesitter-textobjects.swap').swap_next('@parameter.inner') end, desc = 'Swap with next parameter' },
+      { 'n', '<leader>cp', function() require('nvim-treesitter-textobjects.swap').swap_previous('@parameter.inner') end, desc = 'Swap with previous parameter' },
       -- Ctrl+Space selects the node under the cursor; again grows it; Alt+Space shrinks.
       { 'n', '<C-space>', function() require('czernous.incremental_selection').init() end, desc = 'Select syntax node' },
       { 'x', '<C-space>', function() require('czernous.incremental_selection').grow() end, desc = 'Grow selection to parent node' },
@@ -151,15 +154,15 @@ M.groups = {
       { 'n', '<leader>rn', function() vim.lsp.buf.rename() end, desc = 'Rename symbol' },
       { 'n', '<leader>ca', function() vim.lsp.buf.code_action() end, desc = 'Code action (fixes, refactors)' },
       { 'n', 'gd', telescope('lsp_definitions'), desc = 'Go to definition' },
-      { 'n', 'gr', telescope('lsp_references'), desc = 'Go to references' },
+      { 'n', 'grr', telescope('lsp_references'), desc = 'Go to references' },
       { 'n', 'gI', telescope('lsp_implementations'), desc = 'Go to implementation' },
       { 'n', 'gD', function() vim.lsp.buf.declaration() end, desc = 'Go to declaration' },
       { 'n', '<leader>D', telescope('lsp_type_definitions'), desc = 'Type definition' },
-      { 'n', '<leader>ds', telescope('lsp_document_symbols'), desc = 'Document symbols' },
+      { 'n', 'gO', telescope('lsp_document_symbols'), desc = 'Document symbols (outline)' },
       { 'n', '<leader>ws', telescope('lsp_dynamic_workspace_symbols'), desc = 'Workspace symbols' },
       -- Press K twice to jump into the hover window (q closes it).
       { 'n', 'K', function() vim.lsp.buf.hover({ border = 'rounded', max_width = 80, max_height = 20 }) end, desc = 'Hover documentation' },
-      { 'n', '<C-k>', function() vim.lsp.buf.signature_help({ border = 'rounded', max_width = 80, max_height = 15 }) end, desc = 'Signature help' },
+      -- Insert mode; Neovim's built-in <C-s> does the same.
       { 'i', '<C-h>', function() vim.lsp.buf.signature_help({ border = 'rounded', max_width = 80, max_height = 15 }) end, desc = 'Signature help' },
       { 'n', '<leader>wa', function() vim.lsp.buf.add_workspace_folder() end, desc = 'Workspace: add folder' },
       { 'n', '<leader>wr', function() vim.lsp.buf.remove_workspace_folder() end, desc = 'Workspace: remove folder' },
@@ -183,10 +186,9 @@ M.groups = {
       end, expr = true, desc = 'Previous git hunk' },
       { 'v', '<leader>hs', function() gs().stage_hunk({ vim.fn.line('.'), vim.fn.line('v') }) end, desc = 'Stage selected lines' },
       { 'v', '<leader>hr', function() gs().reset_hunk({ vim.fn.line('.'), vim.fn.line('v') }) end, desc = 'Reset selected lines' },
-      { 'n', '<leader>hs', function() gs().stage_hunk() end, desc = 'Stage hunk' },
+      { 'n', '<leader>hs', function() gs().stage_hunk() end, desc = 'Stage / unstage hunk' },
       { 'n', '<leader>hr', function() gs().reset_hunk() end, desc = 'Reset hunk' },
       { 'n', '<leader>hS', function() gs().stage_buffer() end, desc = 'Stage whole file' },
-      { 'n', '<leader>hu', function() gs().stage_hunk() end, desc = 'Toggle stage hunk' },
       { 'n', '<leader>hR', function() gs().reset_buffer() end, desc = 'Reset whole file' },
       { 'n', '<leader>hp', function() gs().preview_hunk() end, desc = 'Preview hunk' },
       { 'n', '<leader>hb', function() gs().blame_line({ full = false }) end, desc = 'Blame line' },
@@ -197,6 +199,22 @@ M.groups = {
       { { 'o', 'x' }, 'ih', ':<C-U>Gitsigns select_hunk<CR>', desc = 'inner git hunk' },
     },
   },
+}
+
+-- Labels shown by which-key for key prefixes. Only prefixes that actually have
+-- keys are shown (see M.which_key).
+M.prefixes = {
+  { '<leader>c', group = 'Code' },
+  { '<leader>h', group = 'Git hunk' },
+  { '<leader>h', group = 'Git hunk', mode = 'v' },
+  { '<leader>p', group = 'Project / find' },
+  { '<leader>r', group = 'Rename' },
+  { '<leader>t', group = 'Toggle / Trouble' },
+  { '<leader>tt', group = 'Trouble' },
+  { '<leader>w', group = 'Workspace' },
+  { '<leader>g', group = 'Git' },
+  { '<leader>v', group = 'View' },
+  { 'gr', group = 'LSP (built-in)' },
 }
 
 local function set(key, extra)
@@ -242,6 +260,17 @@ function M.lsp(bufnr) set_buffer_group('lsp', bufnr) end
 
 --- Buffer-local git hunk keys (called from gitsigns on_attach).
 function M.gitsigns(bufnr) set_buffer_group('gitsigns', bufnr) end
+
+--- which-key `spec` with the prefixes that have at least one key.
+function M.which_key()
+  local all = M.all()
+  return vim.tbl_filter(function(p)
+    for _, k in ipairs(all) do
+      if k.lhs ~= p[1] and k.lhs:sub(1, #p[1]) == p[1] and (p.mode or 'n') == (k.mode == 'v' and 'v' or k.mode) then return true end
+    end
+    return false
+  end, M.prefixes)
+end
 
 --- Flat list of every key: { mode, lhs, desc, group }.
 function M.all()

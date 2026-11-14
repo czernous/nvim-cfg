@@ -49,4 +49,15 @@ function M.setup()
   table.sort(M.enabled)
 end
 
+--- Format the buffer: LSP if an attached server can, otherwise Neoformat
+--- (which runs external formatters like prettier/biome if installed).
+function M.format()
+  local clients = vim.lsp.get_clients({ bufnr = 0, method = 'textDocument/formatting' })
+  if #clients > 0 then
+    vim.lsp.buf.format()
+  else
+    vim.cmd('Neoformat')
+  end
+end
+
 return M

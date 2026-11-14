@@ -320,6 +320,88 @@ check.global('no_cli_no_install', function()
   return #calls == 0 and #check.errors == before, ('install called %d times, errors=%d'):format(#calls, #check.errors - before)
 end)
 
+-- Errors findable without virtual text (owner: virtual text hurts performance).
+check.global('diagnostics_findable', function()
+  local c = vim.diagnostic.config()
+  if c.virtual_text then return false, 'virtual_text is on' end
+  if not c.severity_sort then return false, 'severity_sort off' end
+  local lcfg = require('lualine').get_config()
+  local has = false
+  for _, sec in pairs(lcfg.sections) do
+    for _, comp in ipairs(sec) do if comp == 'diagnostics' or (type(comp) == 'table' and comp[1] == 'diagnostics') then has = true end end
+  end
+  if not has then return false, 'lualine has no diagnostics component' end
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua')
+  local ns = vim.api.nvim_create_namespace('czcheck')
+  vim.diagnostic.set(ns, 0, { { lnum = 4, col = 0, message = 'injected', severity = vim.diagnostic.severity.ERROR } })
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  local before = #vim.api.nvim_list_wins()
+  vim.api.nvim_feedkeys(']d', 'x', false)
+  vim.wait(200)
+  local opened = #vim.api.nvim_list_wins() > before
+  local line = vim.api.nvim_win_get_cursor(0)[1]
+  vim.diagnostic.reset(ns)
+  return opened and line == 5, ('float opened=%s cursor line=%d'):format(opened, line)
+end)
+
+check.global('signcolumn_fixed', function()
+  return vim.o.signcolumn == 'yes', 'signcolumn=' .. vim.o.signcolumn
+end)
+
+-- <leader>f: LSP formatting if a server can, otherwise Neoformat.
+check.global('format_falls_back', function()
+  local ok, lsp = pcall(require, 'czernous.lsp')
+  if not ok or not lsp.format then return false, 'czernous.lsp.format missing' end
+  vim.cmd('silent! %bwipeout!'); vim.cmd('enew'); vim.bo.filetype = 'text'
+  local called = false
+  vim.api.nvim_create_user_command('Neoformat', function() called = true end, { force = true })
+  lsp.format()
+  return called, 'Neoformat not called in a buffer without LSP'
+end)
+
+check.global('source_only_lua_vim', function()
+  local key
+  for _, k in ipairs(require('czernous.keymaps').all()) do if k.lhs == '<leader><leader>' then key = k end end
+  if not key then return false, '<leader><leader> not found' end
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/go/main.go')
+  local before = #check.errors
+  local warned = false
+  local n = vim.notify
+  vim.notify = function(m, l, o) if l == vim.log.levels.WARN then warned = true end return n(m, l, o) end
+  local ok = pcall(vim.api.nvim_feedkeys, vim.keycode('<leader><leader>'), 'x', false)
+  vim.notify = n
+  return ok and warned and #check.errors == before, ('ok=%s warned=%s'):format(ok, warned)
+end)
+
+check.global('which_key_groups_used', function()
+  local reg = require('czernous.keymaps')
+  if not reg.which_key then return false, 'keymaps.which_key() missing' end
+  local all = reg.all()
+  local bad = {}
+  for _, g in ipairs(reg.which_key()) do
+    local used = false
+    for _, k in ipairs(all) do
+      if k.lhs ~= g[1] and k.lhs:sub(1, #g[1]) == g[1] then used = true end
+    end
+    if not used then bad[#bad + 1] = g[1] .. ' (' .. g.group .. ')' end
+  end
+  return #bad == 0, 'groups with no keys: ' .. table.concat(bad, ', ')
+end)
+
+-- Owner's choices at the Task 2 checkpoint.
+check.global('owner_key_choices', function()
+  local have = {}
+  for _, k in ipairs(require('czernous.keymaps').all()) do have[k.mode .. ' ' .. k.lhs] = true end
+  local bad = {}
+  for _, gone in ipairs({ 'n <C-p>', 'n <leader>ttw', 'n <leader>hu', 'n <leader>nf', 'n <C-S-P>', 'n <C-S-N>' }) do
+    if have[gone] then bad[#bad + 1] = gone .. ' still defined' end
+  end
+  for _, want in ipairs({ 'n <leader>[', 'n <leader>]' }) do
+    if not have[want] then bad[#bad + 1] = want .. ' missing' end
+  end
+  return #bad == 0, table.concat(bad, ', ')
+end)
+
 check.global('no_cfg_dir', function()
   return vim.fn.isdirectory(root .. '/lua/czernous/cfg') == 0, 'lua/czernous/cfg still exists'
 end)
