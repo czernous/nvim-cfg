@@ -1,11 +1,13 @@
 -- Git integration. Keys are in keymaps.lua (groups 'Git' and 'Git hunks').
 return {
-  { 'tpope/vim-fugitive' },
+  -- Loads on :Git (or <leader>gs).
+  { 'tpope/vim-fugitive', cmd = { 'Git', 'G', 'Gdiffsplit', 'Gvdiffsplit', 'Gread', 'Gwrite', 'Gedit' } },
   -- :GBrowse opens the current file on GitHub (fugitive extension).
-  { 'tpope/vim-rhubarb' },
+  { 'tpope/vim-rhubarb', cmd = 'GBrowse', dependencies = { 'tpope/vim-fugitive' } },
   {
-    -- Git change markers in the gutter + hunk actions.
+    -- Git change markers in the gutter + hunk actions. Loads when a file opens.
     'lewis6991/gitsigns.nvim',
+    event = { 'BufReadPre', 'BufNewFile' },
     opts = {
       signs = {
         add = { text = '+' },

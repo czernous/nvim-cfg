@@ -13,7 +13,8 @@ if [ "$1" = "--tripwires" ]; then
   for pair in blocking:no_blocking_calls global:no_global_writes reflection:no_reflection \
               deprecated:no_deprecated_api leak:no_buffer_state_leaks \
               whichkey:which_key_groups_used blocking_late:no_blocking_calls \
-              blocking_static:no_blocking_calls leak_weak:no_buffer_state_leaks; do
+              blocking_static:no_blocking_calls leak_weak:no_buffer_state_leaks \
+              eager:only_theme_loads_at_startup; do
     wire=${pair%%:*}; target=${pair##*:}
     out=$(CHECK_TRIPWIRE=$wire CHECK_ONLY="^$target\$" nvim --headless --cmd "luafile tests/check.lua" 2>&1)
     # The check must fail BECAUSE of the tripwire: its message has to name the

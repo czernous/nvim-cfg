@@ -4,7 +4,7 @@ return {
   {
     'nvim-treesitter/nvim-treesitter',
     branch = 'main', -- required for Neovim 0.12; master is archived
-    lazy = false,
+    event = 'FileType', -- first buffer with a filetype
     build = ':TSUpdate',
     dependencies = {
       { 'nvim-treesitter/nvim-treesitter-textobjects', branch = 'main' },
@@ -14,6 +14,6 @@ return {
     end,
   },
   -- Shows the enclosing function/class at the top of the window.
-  { 'nvim-treesitter/nvim-treesitter-context' },
+  { 'nvim-treesitter/nvim-treesitter-context', event = { 'BufReadPre', 'BufNewFile' } },
   -- (playground removed: use built-in :InspectTree / :Inspect.)
 }

@@ -3,6 +3,7 @@ return {
   {
     'navarasu/onedark.nvim',
     name = 'onedark',
+    lazy = false, -- the one plugin needed for the first screen
     priority = 1000,
     config = function()
       require('onedark').setup({ style = 'warm' })
@@ -12,6 +13,7 @@ return {
   { 'nvim-tree/nvim-web-devicons' },
   {
     'nvim-lualine/lualine.nvim',
+    event = 'VeryLazy', -- just after the first screen
     dependencies = { 'nvim-tree/nvim-web-devicons' },
     opts = {
       options = {

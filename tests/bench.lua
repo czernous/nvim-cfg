@@ -123,6 +123,20 @@ end
 ---------------------------------------------------------------------------
 -- Driver
 ---------------------------------------------------------------------------
+--- Milliseconds from spawning Neovim until it reports it is ready (VimEnter):
+--- what you wait for when you open the editor. Shutdown is not included (unlike
+--- timing `nvim +qa`, which also pays for writing ShaDa on exit).
+function M.ready_ms(args, env, cwd)
+  local t0, t1 = uv.hrtime(), nil
+  local cmd = { vim.v.progpath, '--headless', '--cmd',
+    "autocmd VimEnter * ++once lua io.stdout:write('R') io.stdout:flush() vim.cmd('qa!')" }
+  vim.list_extend(cmd, args or {})
+  vim.system(cmd, { env = env, cwd = cwd or root, stdout = function(_, data)
+    if data and not t1 then t1 = uv.hrtime() end
+  end }):wait(60000)
+  return t1 and (t1 - t0) / 1e6 or nil
+end
+
 local function child(args, env, timeout)
   local cmd = vim.list_extend({ vim.v.progpath, '--headless' }, args)
   local r = vim.system(cmd, { text = true, env = env, cwd = root }):wait(timeout or 120000)
@@ -242,6 +256,14 @@ local function pass(runs, env)
   end
   res.launch_ms = launch({ '+qa' })
   res.bare_launch_ms = launch({ '-u', 'NONE', '+qa' })
+  -- The headline: spawn -> ready, without shutdown.
+  local function ready(args)
+    local t = {}
+    for _ = 1, runs do t[#t + 1] = M.ready_ms(args, env) end
+    return stats(t)
+  end
+  res.ready_ms = ready({})
+  res.bare_ready_ms = ready({ '-u', 'NONE' })
 
   local a = child({ probe, load, fixtures .. '/lua/init.lua' }, with({ BENCH_PROBE = 'alloc' }), 60000)
   for ev, bytes in pairs(a.bytes or {}) do
@@ -282,8 +304,10 @@ function M.main(argv)
     if v.min then return ('%-28s min %7.1f  median %7.1f  max %7.1f  (n=%d)'):format(name, v.min, v.median, v.max, v.n) end
     return ('%-28s %8d'):format(name, v.median)
   end
-  print(row('launch (wall clock) ms', second.launch_ms))
-  print(row('bare nvim launch ms', second.bare_launch_ms))
+  print(row('READY (spawn -> usable) ms', second.ready_ms))
+  print(row('bare nvim ready ms', second.bare_ready_ms))
+  print(row('launch+quit (nvim +qa) ms', second.launch_ms))
+  print(row('bare launch+quit ms', second.bare_launch_ms))
   print(row('startup (internal) ms', second.startup_ms))
   for k, v in vim.spairs(second.open_ms) do print(row('open ' .. k .. ' ms', v)) end
   for k, v in vim.spairs(second.completion_ms) do print(row('completion ' .. k .. ' ms', v)) end

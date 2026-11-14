@@ -53,6 +53,9 @@ function M.setup()
     end,
   })
 
+  -- Bring in the server defaults (nvim-lspconfig) and Mason's bin folder now:
+  -- both must be in place before servers are looked up and enabled.
+  vim.api.nvim_exec_autocmds('User', { pattern = 'CzernousLspSetup', modeline = false })
   M.refresh()
 
   -- A server installed with :MasonInstall should start without restarting
@@ -71,12 +74,17 @@ end
 --- Look for the programs of servers that aren't enabled yet and enable the ones
 --- found. Runs in a background shell: on machines whose $PATH has slow entries
 --- (network or Windows mounts) every miss costs ~100ms, so this never blocks.
+local refreshing, again = false, false
 function M.refresh()
+  -- One lookup at a time; a request arriving meanwhile triggers one more afterwards
+  -- (several packages finishing a Mason install would otherwise race).
+  if refreshing then again = true; return end
+  refreshing = true
   local names, exes = {}, {}
   for name, exe in pairs(M.servers) do
     if not vim.tbl_contains(M.enabled, name) then names[#names + 1] = name; exes[#exes + 1] = exe end
   end
-  if #names == 0 then M.ready = true; return end
+  if #names == 0 then M.ready = true; refreshing = false; return end
   local script = 'for e in "$@"; do command -v "$e" >/dev/null 2>&1 && echo "$e"; done'
   vim.system(vim.list_extend({ 'sh', '-c', script, 'sh' }, exes), { text = true }, function(r)
     vim.schedule(function()
@@ -92,6 +100,8 @@ function M.refresh()
           table.sort(M.enabled)
         end
         M.ready = true
+        refreshing = false
+        if again then again = false; M.refresh() end
       end
       -- Neovim only attaches already-open buffers once startup has finished,
       -- so if we got here early (something waited during startup), wait for it.

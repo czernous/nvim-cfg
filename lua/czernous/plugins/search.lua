@@ -5,6 +5,7 @@ return {
     -- master (not the frozen 0.1.x): its previewer uses core treesitter,
     -- required for compatibility with nvim-treesitter main.
     branch = 'master',
+    cmd = 'Telescope', -- also loads on the first search key (keymaps.lua)
     dependencies = {
       'nvim-lua/plenary.nvim',
       {

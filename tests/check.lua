@@ -129,7 +129,11 @@ end
 ---------------------------------------------------------------------------
 ---@param name string
 ---@param fn fun(): boolean, string?
-function check.global(name, fn) table.insert(check.globals, { name = name, fn = fn }) end
+---@param opts? { early?: boolean } early = run before the language checks, while the
+---   machine is still quiet (timing checks: language servers started later skew them)
+function check.global(name, fn, opts)
+  table.insert(check.globals, { name = name, fn = fn, early = opts and opts.early or false })
+end
 
 ---@param spec {name:string, file:string, server:string, exe:string, timeout_ms?:integer}
 function check.lang(spec) table.insert(check.langs, spec) end
@@ -1006,6 +1010,77 @@ check.global('spotless_gradlew_not_executable_warns', function()
     ('ok=%s warned=%s fell back=%s errors=%d %s'):format(tostring(ok), tostring(warned), tostring(fell_back), #check.errors - before, tostring(err or ''))
 end)
 
+---------------------------------------------------------------------------
+-- Startup: nothing loads before the first screen except the theme
+---------------------------------------------------------------------------
+--- Run a child Neovim with this config and a Lua probe; returns its stdout+stderr.
+local function child_nvim(probe_lines, args, timeout)
+  local probe = vim.fn.tempname() .. '.lua'
+  vim.fn.writefile(probe_lines, probe)
+  local cmd = { vim.v.progpath, '--headless', '-n', '--cmd', 'luafile ' .. probe }
+  vim.list_extend(cmd, args or {})
+  local r = vim.system(cmd, { text = true, cwd = root }):wait(timeout or 40000)
+  return (r.stdout or '') .. (r.stderr or '')
+end
+
+check.global('only_theme_loads_at_startup', function()
+  local trip = check.tripwire == 'eager'
+  local out = child_nvim({
+    trip and ("vim.opt.runtimepath:prepend('" .. root .. "/tests/tripwires'); require('czernous.tripwire_eager')") or '',
+    "vim.api.nvim_create_autocmd('VimEnter', { once = true, callback = function()",
+    "  local names = {}",
+    "  for name, p in pairs(require('lazy.core.config').plugins) do if p._.loaded then names[#names + 1] = name end end",
+    "  table.sort(names); io.stdout:write('LOADED=' .. table.concat(names, ',') .. '\\n'); vim.cmd('qa!')",
+    "end })",
+  })
+  local loaded = out:match('LOADED=([^\n]*)')
+  if not loaded then return false, 'child gave no answer: ' .. out:sub(1, 200) end
+  local theme = require('czernous.theme').plugin or 'onedark'
+  local extra = {}
+  for name in loaded:gmatch('[^,]+') do
+    if name ~= 'lazy.nvim' and name ~= theme then extra[#extra + 1] = name end
+  end
+  return #extra == 0, ('loaded before the first screen: %s%s'):format(table.concat(extra, ', '), trip and ' [tripwire eager active]' or '')
+end)
+
+-- Generous ceiling (target is ~5 ms over bare Neovim): catches a regression like
+-- the 1 s one found in step 1 without failing on a noisy machine.
+check.global('launch_within_budget', function()
+  local bench = dofile(root .. '/tests/bench.lua')
+  local function fastest(args)
+    local best = math.huge
+    for _ = 1, 9 do best = math.min(best, bench.ready_ms(args) or math.huge) end
+    return best
+  end
+  -- spawn -> ready (shutdown excluded), config vs bare Neovim
+  local bare, config = fastest({ '-u', 'NONE' }), fastest({})
+  return config - bare <= 12, ('ready in %.1f ms vs bare %.1f ms: config adds %.1f ms (budget 12)'):format(config, bare, config - bare)
+end, { early = true })
+
+-- Lazily loaded plugins must work from every way in.
+check.global('lazy_entry_points', function()
+  local out = child_nvim({
+    "vim.api.nvim_create_autocmd('VimEnter', { once = true, callback = function()",
+    "  local res = {}",
+    "  vim.api.nvim_feedkeys(vim.keycode('<leader>pf'), 'x', false)", -- a key, immediately
+    "  res[#res + 1] = 'key=' .. tostring(package.loaded['telescope'] ~= nil)",
+    "  pcall(vim.cmd, 'stopinsert'); pcall(vim.cmd, 'silent! close')",
+    "  res[#res + 1] = 'gitcmd=' .. vim.fn.exists(':Git')",
+    "  local ok = pcall(vim.cmd, 'silent Git --version')",
+    "  res[#res + 1] = 'git=' .. tostring(ok and vim.fn.exists('*FugitiveGitDir') == 1)",
+    "  res[#res + 1] = 'ts=' .. tostring(vim.treesitter.highlighter.active[vim.fn.bufnr('main.go')] ~= nil)",
+    "  local ok2 = pcall(vim.cmd, 'Telescope builtin')",
+    "  res[#res + 1] = 'cmd=' .. tostring(ok2)",
+    "  io.stdout:write('ENTRY ' .. table.concat(res, ' ') .. ' msgs=' .. vim.api.nvim_exec2('messages', { output = true }).output:gsub('\\n', ' | '):sub(1, 200) .. '\\n')",
+    "  vim.cmd('qa!')",
+    "end })",
+  }, { fixtures .. '/go/main.go' })
+  local line = out:match('ENTRY ([^\n]*)') or ('no answer: ' .. out:sub(1, 300))
+  local good = line:find('key=true') and line:find('gitcmd=2') and line:find('git=true') and line:find('ts=true') and line:find('cmd=true')
+    and not line:find('E%d+:') and not line:find('not found')
+  return good ~= nil and good ~= false, line
+end)
+
 check.global('no_cfg_dir', function()
   return vim.fn.isdirectory(root .. '/lua/czernous/cfg') == 0, 'lua/czernous/cfg still exists'
 end)
@@ -1104,24 +1179,34 @@ local function run()
   vim.api.nvim_exec_autocmds('User', { pattern = 'VeryLazy', modeline = false })
   vim.wait(500)
 
-  -- CHECK_ONLY=<lua pattern>: run only the matching global checks (fast; used by --tripwires).
+  -- CHECK_ONLY=<lua patterns separated by |>: run only the matching global checks
+  -- (fast; used by --tripwires). Language checks are skipped then.
   local only = vim.env.CHECK_ONLY
   if only == '' then only = nil end
+  local function wanted(name)
+    if not only then return true end
+    for pat in only:gmatch('[^|]+') do if name:match(pat) then return true end end
+    return false
+  end
+  local function run_global(g)
+    local ok, passed, msg = pcall(g.fn)
+    if not ok then report('FAIL', g.name, passed)
+    elseif passed == 'skip' then report('SKIP', g.name, msg)
+    elseif passed then report('PASS', g.name)
+    else report('FAIL', g.name, msg) end
+  end
+
+  for _, g in ipairs(check.globals) do
+    if g.early and wanted(g.name) then run_global(g) end
+  end
   if not only then
     for _, spec in ipairs(check.langs) do
       local ok, err = pcall(run_lang, spec)
       if not ok then report('FAIL', 'lang:' .. spec.name, err) end
     end
   end
-
   for _, g in ipairs(check.globals) do
-    if only and not g.name:match(only) then goto continue end
-    local ok, passed, msg = pcall(g.fn)
-    if not ok then report('FAIL', g.name, passed)
-    elseif passed == 'skip' then report('SKIP', g.name, msg)
-    elseif passed then report('PASS', g.name)
-    else report('FAIL', g.name, msg) end
-    ::continue::
+    if not g.early and wanted(g.name) then run_global(g) end
   end
 
   -- Errors last, so everything above had a chance to produce them.
