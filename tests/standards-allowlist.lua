@@ -11,5 +11,8 @@ return {
     { file = 'lua/czernous/treesitter.lua', call = 'vim.fn.executable', reason = 'tree-sitter CLI lookup, cached per $PATH' },
     -- Evaluated once, when rust-analyzer's settings are first resolved.
     { file = 'after/lsp/rust_analyzer.lua', call = 'vim.fn.executable', reason = 'leptosfmt lookup, once per session' },
+    -- :checkhealth czernous exists to look programs up; it only runs on demand.
+    { file = 'lua/czernous/health.lua', call = 'vim.fn.executable', reason = 'on-demand health report' },
+    { file = 'lua/czernous/health.lua', call = 'vim.fn.exepath', reason = 'on-demand health report' },
   },
 }

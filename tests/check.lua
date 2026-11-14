@@ -1495,6 +1495,21 @@ check.global('find_helper_keys', function()
   return #bad == 0, table.concat(bad, ', ')
 end)
 
+-- :checkhealth czernous lists the system tools the config relies on, so a new
+-- machine can be checked at a glance.
+check.global('health_lists_tools', function()
+  -- a PATH without ripgrep (but with everything else)
+  local dirs = vim.tbl_filter(function(d) return vim.fn.executable(d .. '/rg') == 0 end, vim.split(vim.env.PATH, ':', { plain = true }))
+  local out = vim.system({ vim.v.progpath, '--headless', '-n', '-c', 'checkhealth czernous',
+    '-c', "lua io.stdout:write(table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '\\n'))", '-c', 'qa!' },
+    { text = true, cwd = root, env = { PATH = table.concat(dirs, ':') } }):wait(40000)
+  local text = (out.stdout or '') .. (out.stderr or '')
+  -- servers installed through Mason must be reported as found even this early after startup
+  local mason_ok = vim.fn.executable(vim.fn.stdpath('data') .. '/mason/bin/lua-language-server') == 0 or text:find('OK[^\n]*lua%-language%-server')
+  local ok = text:find('ERROR[^\n]*ripgrep') and text:find('OK[^\n]*git') and mason_ok and not text:find('stack traceback')
+  return ok ~= nil, text:gsub('\n', ' | '):sub(1, 300)
+end)
+
 check.global('no_cfg_dir', function()
   return vim.fn.isdirectory(root .. '/lua/czernous/cfg') == 0, 'lua/czernous/cfg still exists'
 end)
