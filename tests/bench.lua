@@ -169,7 +169,7 @@ local VISIBLE = [[
 --- Last keystroke -> completion menu visible. The child runs in a pseudo-terminal
 --- (completion engines don't auto-trigger without a UI) and is driven over a
 --- socket; the prefix is typed one key at a time, like a person would.
-local function completion(file, prefix, open, runs, env)
+function M.completion(file, prefix, open, runs, env, accept)
   local sock = vim.fn.tempname() .. '.sock'
   local job = vim.fn.jobstart({ vim.v.progpath, '-n', '--listen', sock, file }, {
     pty = true, width = 120, height = 40, cwd = root, on_stdout = function() end,
@@ -206,7 +206,24 @@ local function completion(file, prefix, open, runs, env)
     vim.rpcrequest(ch, 'nvim_input', '<Esc>u')
     vim.wait(200)
   end
+  local accepted
+  if accept then
+    vim.rpcrequest(ch, 'nvim_input', open)
+    for i = 1, #prefix do vim.rpcrequest(ch, 'nvim_input', prefix:sub(i, i)); vim.wait(60) end
+    if poll(5000, VISIBLE) then
+      vim.wait(150)
+      vim.rpcrequest(ch, 'nvim_input', '<CR>')
+      vim.wait(300)
+      accepted = lua('return vim.api.nvim_get_current_line()')
+    end
+    vim.rpcrequest(ch, 'nvim_input', '<Esc>u')
+  end
   pcall(vim.rpcrequest, ch, 'nvim_command', 'qa!')
+  if accept then
+    local st = #samples >= 3 and stats(samples) or { error = 'menu never appeared' }
+    st.accepted = accepted
+    return done(st)
+  end
   if #samples < 3 then return done({ error = 'menu never appeared' }) end
   table.remove(samples, 1); table.remove(samples, 1) -- warm-up
   return done(stats(samples))
@@ -241,7 +258,7 @@ local function pass(runs, env)
   end
 
   for lang, c in pairs(COMPLETION) do
-    res.completion_ms[lang] = completion(fixtures .. '/' .. c.file, c.prefix, c.open, runs, env)
+    res.completion_ms[lang] = M.completion(fixtures .. '/' .. c.file, c.prefix, c.open, runs, env)
   end
 
   -- Wall-clock launch (what you feel) and the floor: the same Neovim with no config.

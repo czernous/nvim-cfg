@@ -1,67 +1,33 @@
--- Autocompletion (nvim-cmp) with snippets (LuaSnip).
+-- Autocompletion: blink.cmp. Loads just after startup (LSP setup asks it what
+-- it supports) and is ready before you first type.
+--
+-- Keys while the menu is open:
+--   <C-n>/<C-p> or <Tab>/<S-Tab>  next / previous item
+--   <CR>                          accept the selected item
+--   <C-Space>                     open the menu (or toggle its documentation)
+--   <C-b>/<C-f>                   scroll the documentation
+--   <C-e>                         close the menu
+--   <Tab>/<S-Tab> also jump between the placeholders of an expanded snippet.
 return {
   {
-    'hrsh7th/nvim-cmp',
+    'saghen/blink.cmp',
+    version = '*', -- tagged releases only
     event = 'InsertEnter',
-    dependencies = {
-      'L3MON4D3/LuaSnip',
-      'saadparwaiz1/cmp_luasnip',
-      'hrsh7th/cmp-nvim-lsp',
-      'hrsh7th/cmp-path',
-      'rafamadriz/friendly-snippets',
+    dependencies = { 'rafamadriz/friendly-snippets' }, -- snippet collection (data only)
+    opts = {
+      keymap = {
+        preset = 'enter',
+        ['<Tab>'] = { 'select_next', 'snippet_forward', 'fallback' },
+        ['<S-Tab>'] = { 'select_prev', 'snippet_backward', 'fallback' },
+      },
+      -- Pure-Lua matcher: nothing is downloaded or compiled. (The optional
+      -- native matcher is faster on huge lists; not worth a binary here.)
+      fuzzy = { implementation = 'lua' },
+      sources = { default = { 'lsp', 'path', 'snippets' } },
+      completion = {
+        documentation = { auto_show = true, auto_show_delay_ms = 150 },
+      },
+      signature = { enabled = true }, -- argument hints while typing a call
     },
-    config = function()
-      -- [[ Configure nvim-cmp ]]
-      -- See `:help cmp`
-      local cmp = require 'cmp'
-      local luasnip = require 'luasnip'
-      require('luasnip.loaders.from_vscode').lazy_load()
-      luasnip.config.setup {}
-
-      cmp.setup {
-        snippet = {
-          expand = function(args)
-            luasnip.lsp_expand(args.body)
-          end,
-        },
-        completion = {
-          completeopt = 'menu,menuone,noinsert',
-        },
-        mapping = cmp.mapping.preset.insert {
-          ['<C-n>'] = cmp.mapping.select_next_item(),
-          ['<C-p>'] = cmp.mapping.select_prev_item(),
-          ['<C-b>'] = cmp.mapping.scroll_docs(-4),
-          ['<C-f>'] = cmp.mapping.scroll_docs(4),
-          ['<C-Space>'] = cmp.mapping.complete {},
-          ['<CR>'] = cmp.mapping.confirm {
-            behavior = cmp.ConfirmBehavior.Replace,
-            select = true,
-          },
-          ['<Tab>'] = cmp.mapping(function(fallback)
-            if cmp.visible() then
-              cmp.select_next_item()
-            elseif luasnip.expand_or_locally_jumpable() then
-              luasnip.expand_or_jump()
-            else
-              fallback()
-            end
-          end, { 'i', 's' }),
-          ['<S-Tab>'] = cmp.mapping(function(fallback)
-            if cmp.visible() then
-              cmp.select_prev_item()
-            elseif luasnip.locally_jumpable(-1) then
-              luasnip.jump(-1)
-            else
-              fallback()
-            end
-          end, { 'i', 's' }),
-        },
-        sources = {
-          { name = 'nvim_lsp' },
-          { name = 'luasnip' },
-          { name = 'path' },
-        },
-      }
-    end,
   },
 }

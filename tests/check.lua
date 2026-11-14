@@ -1081,6 +1081,37 @@ check.global('lazy_entry_points', function()
   return good ~= nil and good ~= false, line
 end)
 
+---------------------------------------------------------------------------
+-- Completion
+---------------------------------------------------------------------------
+check.global('completion_menu_appears', function()
+  if vim.fn.executable('lua-language-server') == 0 then return 'skip', 'lua-language-server not on PATH' end
+  local bench = dofile(root .. '/tests/bench.lua')
+  -- real terminal UI in a pty child: type `pri`, wait for the menu, accept with Enter
+  local r = bench.completion(fixtures .. '/lua/init.lua', 'pri', '<Esc>Go', 3, nil, true)
+  if r.error then return false, r.error end
+  local line = vim.trim(r.accepted or '')
+  return r.median < 500 and line:find('^print') ~= nil,
+    ('menu after %.0f ms (want < 500); Enter inserted %q (want print...)'):format(r.median, line)
+end)
+
+check.global('completion_engine_is_blink', function()
+  local lock = table.concat(vim.fn.readfile(root .. '/lazy-lock.json'), '\n')
+  local bad = {}
+  for _, gone in ipairs({ '"nvim-cmp"', '"LuaSnip"', '"cmp_luasnip"', '"cmp-nvim-lsp"', '"cmp-path"' }) do
+    if lock:find(gone, 1, true) then bad[#bad + 1] = gone .. ' still in lockfile' end
+  end
+  if not lock:find('"blink.cmp"', 1, true) then bad[#bad + 1] = 'blink.cmp not in lockfile' end
+  local caps = vim.lsp.config['*'] and vim.lsp.config['*'].capabilities or {}
+  if not vim.tbl_get(caps, 'textDocument', 'completion', 'completionItem', 'snippetSupport') then
+    bad[#bad + 1] = 'LSP capabilities do not advertise snippet support'
+  end
+  -- pure-Lua fuzzy matcher: no native binary downloaded or built
+  local so = vim.fn.globpath(vim.fn.stdpath('data') .. '/lazy/blink.cmp', 'target/**/*.so', false, true)
+  if #so > 0 then bad[#bad + 1] = 'native binary present: ' .. so[1] end
+  return #bad == 0, table.concat(bad, '; ')
+end)
+
 check.global('no_cfg_dir', function()
   return vim.fn.isdirectory(root .. '/lua/czernous/cfg') == 0, 'lua/czernous/cfg still exists'
 end)

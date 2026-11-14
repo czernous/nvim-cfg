@@ -40,8 +40,10 @@ function M.setup()
   })
 
   vim.lsp.config('*', {
-    -- nvim-cmp completion capabilities for every server.
-    capabilities = require('cmp_nvim_lsp').default_capabilities(),
+    -- Tell every server what the completion engine supports (snippets, lazy
+    -- documentation, ...). This runs after the first screen, so asking blink
+    -- here costs nothing at launch.
+    capabilities = require('blink.cmp').get_lsp_capabilities(),
     -- A server that crashes before it finishes starting (e.g. a rustup proxy
     -- without the component installed) is disabled for this session, instead
     -- of being restarted -- and warning -- for every file you open.
