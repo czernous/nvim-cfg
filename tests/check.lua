@@ -263,6 +263,63 @@ check.global('rootless_file_is_quiet', function()
   return bad == 0, msgs
 end)
 
+-- Treesitter: owner's languages are kept installed; others install on first open.
+check.global('parsers_installed', function()
+  local ok, tsm = pcall(require, 'czernous.treesitter')
+  if not ok or not tsm.parsers then return false, 'czernous.treesitter has no parsers list' end
+  local need = { 'go', 'gomod', 'rust', 'c_sharp', 'java', 'javascript', 'typescript', 'tsx', 'lua' }
+  local missing = {}
+  local installed = require('nvim-treesitter').get_installed()
+  for _, l in ipairs(need) do
+    if not vim.tbl_contains(tsm.parsers, l) then missing[#missing + 1] = l .. ' (not in list)'
+    elseif not vim.tbl_contains(installed, l) then missing[#missing + 1] = l .. ' (not installed)' end
+  end
+  return #missing == 0, table.concat(missing, ', ')
+end)
+
+-- Opens a buffer with an available-but-uninstalled language; returns install calls.
+local function install_calls_on_open(path_override)
+  local nts = require('nvim-treesitter')
+  local available = nts.get_available()
+  local installed = nts.get_installed()
+  local lang
+  for _, l in ipairs({ 'zig', 'elixir', 'ocaml', 'haskell', 'erlang' }) do
+    if vim.tbl_contains(available, l) and not vim.tbl_contains(installed, l) then lang = l; break end
+  end
+  if not lang then return nil, 'no uninstalled test language available' end
+  local calls = {}
+  local real = nts.install
+  nts.install = function(langs)
+    calls[#calls + 1] = langs
+    return { await = function() end }
+  end
+  local old = vim.env.PATH
+  if path_override then vim.env.PATH = path_override end
+  vim.cmd('silent! %bwipeout!'); vim.cmd('enew')
+  local ok, err = pcall(function() vim.bo.filetype = lang end)
+  vim.env.PATH = old
+  nts.install = real
+  if not ok then return nil, err end
+  return calls
+end
+
+check.global('auto_install_on_open', function()
+  if vim.fn.executable('tree-sitter') == 0 then return true end
+  local calls, err = install_calls_on_open()
+  if not calls then return false, err end
+  return #calls == 1, ('install called %d times'):format(#calls)
+end)
+
+check.global('no_cli_no_install', function()
+  local before = #check.errors
+  -- PATH without the tree-sitter CLI
+  local dirs = vim.tbl_filter(function(d) return vim.fn.executable(d .. '/tree-sitter') == 0 end,
+    vim.split(vim.env.PATH, ':', { plain = true }))
+  local calls, err = install_calls_on_open(table.concat(dirs, ':'))
+  if not calls then return false, err end
+  return #calls == 0 and #check.errors == before, ('install called %d times, errors=%d'):format(#calls, #check.errors - before)
+end)
+
 check.global('no_cfg_dir', function()
   return vim.fn.isdirectory(root .. '/lua/czernous/cfg') == 0, 'lua/czernous/cfg still exists'
 end)
