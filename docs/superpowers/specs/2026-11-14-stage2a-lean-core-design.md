@@ -118,6 +118,13 @@ updates and Nix packaging have as little as possible to go wrong.
      transparent editor look wrong): floating windows, Telescope/picker, completion menu,
      hover, which-key are transparent too, kept readable by a visible border. Supersedes
      step 1's "popups keep a solid background".
+   - **Rule-based, never a per-element list** (owner: "that should not be hardcoded"):
+     after a palette is applied, every highlight group whose background is one of the
+     palette's *background* colours (base16 `base00`/`base01`) loses its background —
+     found by scanning all groups, not by naming plugins or elements. Accent backgrounds
+     (selection, search, cursor line, diff) are other palette colours and stay. Groups
+     plugins define later link to standard groups and inherit the result; a check opens
+     the picker/completion/hover/which-key and asserts none paints a palette background.
    - 2a builds the palette mechanism + polarity rule; a theme picker UI is 2b.
 
 ## Decisions already made (owner)
