@@ -663,7 +663,7 @@ end)
 
 check.global('special_buffers_are_quiet', function()
   local before = #check.errors
-  for _, cmd in ipairs({ 'help help', 'Oil', 'terminal', 'enew' }) do
+  for _, cmd in ipairs({ 'help help', "lua vim.api.nvim_feedkeys(vim.keycode('<leader>pv'), 'x', false)", 'terminal', 'enew' }) do
     vim.cmd('silent! %bwipeout!')
     local ok, err = pcall(vim.cmd, cmd)
     if not ok then return false, cmd .. ': ' .. tostring(err) end
@@ -1182,7 +1182,7 @@ end)
 
 check.global('statusline_special_buffers', function()
   local before = #check.errors
-  for _, cmd in ipairs({ 'help help', 'Oil', 'terminal', 'enew' }) do
+  for _, cmd in ipairs({ 'help help', "lua vim.api.nvim_feedkeys(vim.keycode('<leader>pv'), 'x', false)", 'terminal', 'enew' }) do
     vim.cmd('silent! %bwipeout!')
     local ok, err = pcall(vim.cmd, cmd)
     if not ok then return false, cmd .. ': ' .. tostring(err) end
@@ -1413,7 +1413,7 @@ check.global('dropped_plugins_gone', function()
   for _, name in ipairs({ 'telescope-fzf-native.nvim', 'vim-rhubarb', 'undotree', 'trouble.nvim', 'nvim-web-devicons', 'neoformat', 'lualine.nvim' }) do
     if lock:find('"' .. name .. '"', 1, true) then bad[#bad + 1] = name end
   end
-  if not lock:find('"oil.nvim"', 1, true) then bad[#bad + 1] = 'oil.nvim missing' end
+  if lock:find('"oil.nvim"', 1, true) then bad[#bad + 1] = 'oil.nvim (owner: not useful without its extra features)' end
   if vim.uv.fs_stat(root .. '/lua/czernous/incremental_selection.lua') then bad[#bad + 1] = 'incremental_selection.lua still exists' end
   return #bad == 0, table.concat(bad, ', ')
 end)
@@ -1440,18 +1440,22 @@ check.global('start_screen_does_not_change_defaults', function()
   return ok ~= nil, text:sub(1, 220)
 end)
 
-check.global('explorer_is_oil', function()
-  if vim.fn.exists(':Explore') == 2 then return false, 'the built-in explorer (netrw) is still loaded' end
+check.global('explorer_is_builtin_on_demand', function()
+  -- not loaded until asked for (a child, so nothing else has loaded it)...
+  local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+    "autocmd VimEnter * ++once lua vim.defer_fn(function() io.stdout:write('ATSTART=' .. vim.fn.exists(':Explore')) vim.cmd('qa!') end, 200)" },
+    { text = true, cwd = root }):wait(30000)
+  local at_start = ((r.stdout or '') .. (r.stderr or '')):match('ATSTART=(%d)')
+  -- ...and <leader>pv opens it on the current file's folder, without its banner
   local dir = vim.fn.tempname(); vim.fn.mkdir(dir, 'p'); vim.fn.writefile({ 'x' }, dir .. '/a.txt')
   vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/a.txt')
   vim.api.nvim_feedkeys(vim.keycode('<leader>pv'), 'x', false)
-  vim.wait(2000, function() return vim.bo.filetype == 'oil' end, 50)
+  vim.wait(2000, function() return vim.bo.filetype == 'netrw' end, 50)
   local ft = vim.bo.filetype
-  vim.wait(500)
   local listing = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '|')
   vim.cmd('silent! %bwipeout!')
-  -- plain names only: no icon column (font independence)
-  return ft == 'oil' and listing:find('a.txt', 1, true) ~= nil and not listing:find('[\128-\255]'), ('filetype=%s listing=%s'):format(ft, listing:sub(1, 80))
+  local ok = at_start ~= '2' and ft == 'netrw' and listing:find('a.txt', 1, true) ~= nil and not listing:find('Netrw Directory Listing', 1, true)
+  return ok, ('loaded at startup=%s filetype=%s listing=%s'):format(tostring(at_start == '2'), ft, listing:sub(1, 80))
 end)
 
 check.global('builtin_undotree_key', function()
@@ -1577,18 +1581,18 @@ check.global('theme_failure_does_not_stop_startup', function()
 end)
 
 check.global('start_screen_respects_what_was_asked_for', function()
-  -- `nvim <folder> +Oil`: the explorer the user asked for stays
+  -- `nvim <folder> +help ...`: what the command line asked for stays
   local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
     "autocmd VimEnter * ++once lua vim.defer_fn(function() io.stdout:write('FT=' .. vim.bo.filetype .. ' START=' .. tostring(vim.b.czernous_start == true) .. ' TS=' .. tostring(package.loaded['nvim-treesitter'] ~= nil)) vim.cmd('qa!') end, 600)",
-    '.', '+Oil' }, { text = true, cwd = root }):wait(30000)
+    '.', '+help help' }, { text = true, cwd = root }):wait(30000)
   local with_oil = (r.stdout or '') .. (r.stderr or '')
   -- plain `nvim .`: start screen, and it does not drag syntax-highlighting plugins in
   local r2 = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
     "autocmd VimEnter * ++once lua vim.defer_fn(function() io.stdout:write('FT=' .. vim.bo.filetype .. ' START=' .. tostring(vim.b.czernous_start == true) .. ' TS=' .. tostring(package.loaded['nvim-treesitter'] ~= nil)) vim.cmd('qa!') end, 600)",
     '.' }, { text = true, cwd = root }):wait(30000)
   local plain = (r2.stdout or '') .. (r2.stderr or '')
-  local ok = with_oil:find('FT=oil START=false') and plain:find('START=true TS=false')
-  return ok ~= nil, ('nvim . +Oil -> %s || nvim . -> %s'):format(with_oil:sub(1, 60), plain:sub(1, 60))
+  local ok = with_oil:find('FT=help START=false') and plain:find('START=true TS=false')
+  return ok ~= nil, ('nvim . +help -> %s || nvim . -> %s'):format(with_oil:sub(1, 60), plain:sub(1, 60))
 end)
 
 check.global('hover_says_starting_not_missing', function()

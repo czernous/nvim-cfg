@@ -10,19 +10,6 @@ return {
       require('harpoon'):setup({ settings = { save_on_toggle = true } })
     end,
   },
-  {
-    -- A folder as an ordinary buffer: one line per file. Edit the lines to
-    -- rename/move/delete, :w applies. `-` up a folder, <CR> open, g? help.
-    -- Loads on <leader>pv / :Oil. Plain names, no icons (no special font needed).
-    'stevearc/oil.nvim',
-    cmd = 'Oil',
-    opts = {
-      default_file_explorer = false, -- `nvim <folder>` shows the start screen instead
-      columns = {},
-      view_options = { show_hidden = true },
-      keymaps = { ['q'] = { 'actions.close', mode = 'n' } },
-    },
-  },
   -- Detect tabstop and shiftwidth automatically when a file opens.
   { 'tpope/vim-sleuth', event = { 'BufReadPre', 'BufNewFile' } },
   {

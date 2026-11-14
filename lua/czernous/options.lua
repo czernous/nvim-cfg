@@ -20,9 +20,10 @@ vim.opt.winborder = 'rounded'
 -- No `~` markers on the empty lines after the end of a file.
 vim.opt.fillchars:append({ eob = ' ' })
 
--- The built-in file explorer (netrw) is not used: <leader>pv opens oil.nvim.
+-- The built-in file explorer (netrw) is not loaded at startup: <leader>pv loads
+-- it on first use (keymaps.lua). No help banner on top of it.
 vim.g.loaded_netrwPlugin = 1
-vim.g.loaded_netrw = 1
+vim.g.netrw_banner = 0
 
 vim.opt.undofile = true        -- undo history survives closing the file
 vim.opt.ignorecase = true      -- searching ignores case...
