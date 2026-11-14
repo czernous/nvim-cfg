@@ -28,6 +28,18 @@ M.enabled = {}
 M.ready = false
 
 function M.setup()
+  -- How errors and warnings are shown. Set here, not in options.lua: loading
+  -- Neovim's diagnostics module costs ~1 ms, and this runs after the first screen.
+  -- No inline (virtual) text and no gutter signs -- by choice, for speed and calm.
+  -- Find errors with: the counts in the statusline, underlines, ]d / [d (jump +
+  -- popup) and the diagnostics list.
+  vim.diagnostic.config({
+    signs = false,
+    virtual_text = false,
+    severity_sort = true,
+    float = { border = 'rounded', source = true },
+  })
+
   vim.api.nvim_create_autocmd('LspAttach', {
     group = vim.api.nvim_create_augroup('czernous_lsp', { clear = true }),
     desc = 'LSP keymaps and :Format',

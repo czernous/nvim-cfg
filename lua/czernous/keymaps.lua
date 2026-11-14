@@ -122,8 +122,8 @@ M.groups = {
     keys = {
       { 'n', '[d', function() vim.diagnostic.jump({ count = -1, on_jump = show_diagnostic }) end, desc = 'Previous diagnostic' },
       { 'n', ']d', function() vim.diagnostic.jump({ count = 1, on_jump = show_diagnostic }) end, desc = 'Next diagnostic' },
-      { 'n', '<leader>vd', vim.diagnostic.open_float, desc = 'View diagnostic message' },
-      { 'n', '<leader>q', vim.diagnostic.setloclist, desc = 'Diagnostics to location list' },
+      { 'n', '<leader>vd', function() vim.diagnostic.open_float() end, desc = 'View diagnostic message' },
+      { 'n', '<leader>q', function() vim.diagnostic.setloclist() end, desc = 'Diagnostics to location list' },
       { 'n', '<leader>ttx', '<cmd>Trouble diagnostics toggle<cr>', plugin = 'trouble.nvim', desc = 'Trouble: diagnostics (all files)' },
       { 'n', '<leader>ttd', '<cmd>Trouble diagnostics toggle filter.buf=0<cr>', plugin = 'trouble.nvim', desc = 'Trouble: buffer diagnostics' },
       { 'n', '<leader>ttl', '<cmd>Trouble loclist toggle<cr>', plugin = 'trouble.nvim', desc = 'Trouble: location list' },

@@ -23,7 +23,14 @@ return {
       -- Pure-Lua matcher: nothing is downloaded or compiled. (The optional
       -- native matcher is faster on huge lists; not worth a binary here.)
       fuzzy = { implementation = 'lua' },
-      sources = { default = { 'lsp', 'path', 'snippets' } },
+      sources = {
+        default = { 'lsp', 'path', 'snippets' },
+        providers = {
+          -- Snippets match loosely ("pri" fuzzy-matches "copyright"); keep them
+          -- well below real code suggestions so Enter never picks one by surprise.
+          snippets = { score_offset = -20, min_keyword_length = 2 },
+        },
+      },
       completion = {
         documentation = { auto_show = true, auto_show_delay_ms = 150 },
       },

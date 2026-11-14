@@ -15,13 +15,6 @@ vim.opt.smartindent = true
 -- Always show the sign column, so git markers appearing doesn't shift the text.
 vim.opt.signcolumn = 'yes'
 
--- Diagnostics: no inline (virtual) text and no gutter signs -- by choice, for
--- speed and calm. Find errors with: the counts in the statusline, underlines,
--- ]d / [d (jump + popup), <leader>vd (popup) and <leader>ttx (Trouble list).
-vim.diagnostic.config({
-  signs = false,
-  virtual_text = false,
-  severity_sort = true,
-  float = { border = 'rounded', source = true },
-})
-
+-- One border style for every popup (hover, completion docs, pickers...). With a
+-- transparent UI the border is what separates a popup from the code behind it.
+vim.opt.winborder = 'rounded'

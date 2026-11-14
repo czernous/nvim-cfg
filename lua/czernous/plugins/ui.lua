@@ -1,15 +1,11 @@
--- Colorschemes, statusline, icons, keymap popup.
+-- Theme renderer, statusline, icons, keymap popup.
 return {
-  {
-    'navarasu/onedark.nvim',
-    name = 'onedark',
-    lazy = false, -- the one plugin needed for the first screen
-    priority = 1000,
-    config = function()
-      require('onedark').setup({ style = 'warm' })
-    end,
-  },
-  { 'catppuccin/nvim', name = 'catppuccin', priority = 1000 },
+  -- Colour schemes. Neither is loaded at a normal start: theme.lua replays its
+  -- cached result. They load only when that cache has to be rebuilt.
+  { 'catppuccin/nvim', name = 'catppuccin' }, -- the default look (see theme.lua)
+  -- Renders a 16-colour base16 palette supplied from outside (how Stylix themes
+  -- Neovim). Not used unless $NVIM_BASE16_PALETTE is set.
+  { 'nvim-mini/mini.base16' },
   { 'nvim-tree/nvim-web-devicons' },
   {
     'nvim-lualine/lualine.nvim',

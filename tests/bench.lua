@@ -157,12 +157,23 @@ local COMPLETION = {
   go = { file = 'go/main.go', prefix = 'fmt.Pr', open = '<Esc>10GO' },
 }
 
--- Lua run inside the child: is a completion menu showing? (engine-neutral)
+-- Lua run inside the child: is a completion menu showing WITH language-server
+-- items in it? (Snippet and path suggestions are local and appear instantly;
+-- timing those would flatter any engine. What matters is the server's answer.)
 local VISIBLE = [[
   local cmp = package.loaded['cmp']
-  if cmp and cmp.visible then return cmp.visible() end
+  if cmp and cmp.visible then
+    if not cmp.visible() then return false end
+    for _, e in ipairs(cmp.get_entries()) do if e.source.name == 'nvim_lsp' then return true end end
+    return false
+  end
   local blink = package.loaded['blink.cmp']
-  if blink and blink.is_menu_visible then return blink.is_menu_visible() end
+  if blink and blink.is_menu_visible then
+    if not blink.is_menu_visible() then return false end
+    local list = package.loaded['blink.cmp.completion.list']
+    for _, item in ipairs(list and list.items or {}) do if item.source_id == 'lsp' then return true end end
+    return false
+  end
   return vim.fn.pumvisible() == 1
 ]]
 
