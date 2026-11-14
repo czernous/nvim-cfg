@@ -145,6 +145,11 @@ tick it was opened. Harmless in normal use; the leak check works around it.
 
 ## 6. Owner decisions
 
+Owner checkpoint, 2026-11-14:
+
 | Item | Decision |
 |---|---|
-| (to be filled at the checkpoint) | |
+| Completion engine | **blink.cmp** (pure-Lua mode) replaces nvim-cmp + LuaSnip + sources |
+| Plugin manager | **Keep lazy.nvim** (ADR 0001 accepted) |
+| Java formatting | **Instant + exact on demand**: `<leader>f` = jdtls with the project's Eclipse formatter file; `<leader>F` = real Spotless |
+| All remaining verdicts and critique fixes | **Approved**: drop telescope-fzf-native, rhubarb, undotree plugin (→ built-in), our selection module (→ built-in `an`/`in`), Trouble; base16 theme; conform.nvim; load everything on demand; options and keymap fixes — owner tests afterwards and may veto; every key change is listed |

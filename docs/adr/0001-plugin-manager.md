@@ -1,6 +1,6 @@
 # ADR 0001 — Plugin manager: keep lazy.nvim
 
-Status: **proposed** (awaiting owner decision, 2026-11-14)
+Status: **accepted** (owner, 2026-11-14)
 
 ## Context
 
@@ -20,7 +20,7 @@ unchanged with plugins supplied by Nix (read-only folder, no network).
 | Maturity | years of use, profiler, UI | new in 0.12, API still settling |
 | Problems seen in the spike | none | our helper replayed `InsertEnter` wrongly: completion never triggered |
 
-## Decision (proposed)
+## Decision
 
 Keep lazy.nvim. The built-in manager is not faster, and choosing it means owning the
 lazy-loading code ourselves — the spike's bug is exactly the kind of thing that code
