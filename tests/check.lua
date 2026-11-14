@@ -1612,6 +1612,32 @@ check.global('hover_says_starting_not_missing', function()
     ('starting -> %q; missing -> %q'):format(starting:sub(1, 60), missing:sub(1, 60))
 end)
 
+---------------------------------------------------------------------------
+-- Startup: work that can wait until after the first screen does wait
+---------------------------------------------------------------------------
+-- The history file (ShaDa: recent files, registers, marks) costs 1-2.5 ms to
+-- read. It is read just after the first screen, not before it.
+check.global('history_file_read_after_first_screen', function()
+  local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+    "autocmd VimEnter * ++once lua local at_start = #vim.v.oldfiles vim.defer_fn(function() io.stdout:write(('SHADA at_first_screen=%d later=%d file=%q'):format(at_start, #vim.v.oldfiles, vim.o.shadafile)) vim.cmd('qa!') end, 400)" },
+    { text = true, cwd = root }):wait(30000)
+  local out = (r.stdout or '') .. (r.stderr or '')
+  local at_start, later, file = out:match('at_first_screen=(%d+) later=(%d+) file="(.-)"')
+  if not at_start then return false, out:sub(1, 200) end
+  -- nothing read before the first screen; everything there afterwards; normal file in use again
+  local have_history = #vim.v.oldfiles > 0
+  return at_start == '0' and file == '' and (not have_history or tonumber(later) > 0), out:sub(1, 160)
+end)
+
+check.global('startup_extras_deferred', function()
+  local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+    "autocmd VimEnter * ++once lua local m = tostring(vim.g.loaded_matchit) vim.defer_fn(function() vim.cmd.edit('tests/fixtures/lua/init.lua') vim.defer_fn(function() io.stdout:write(('EXTRAS matchit_at_start=%s matchit_with_file=%s'):format(m, tostring(vim.g.loaded_matchit))) vim.cmd('qa!') end, 200) end, 50)" },
+    { text = true, cwd = root }):wait(30000)
+  local out = (r.stdout or '') .. (r.stderr or '')
+  -- extended % matching loads with the first file, not before
+  return out:find('matchit_at_start=nil matchit_with_file=1') ~= nil, out:sub(1, 160)
+end)
+
 check.global('no_cfg_dir', function()
   return vim.fn.isdirectory(root .. '/lua/czernous/cfg') == 0, 'lua/czernous/cfg still exists'
 end)

@@ -184,7 +184,7 @@ end
 -- thrown away whenever plugins are updated. Bump CACHE_VERSION when the rules
 -- above change. The key is compared as plain text (hashing it cost 3.9 ms).
 --------------------------------------------------------------------------------
-local CACHE_VERSION = 5
+local CACHE_VERSION = 6
 local cache_dir = vim.fn.stdpath('cache') .. '/czernous-theme'
 
 local function cache_key(theme)
@@ -205,23 +205,21 @@ local function cache_key(theme)
 end
 
 local function cache_file(theme)
-  return ('%s/%s-%s.json'):format(cache_dir, (theme.name:gsub('[^%w_-]', '_')), M.opts.transparent and 'transparent' or 'solid')
+  return ('%s/%s-%s.mpack'):format(cache_dir, (theme.name:gsub('[^%w_-]', '_')), M.opts.transparent and 'transparent' or 'solid')
 end
 
 local function apply_cached(theme)
-  local fd = io.open(cache_file(theme), 'r')
+  local fd = io.open(cache_file(theme), 'rb')
   if not fd then return false end
-  local text = fd:read('*a')
+  local data = fd:read('*a')
   fd:close()
-  local ok, saved = pcall(vim.json.decode, text)
+  -- msgpack, Neovim's own binary format: decoding ~950 groups takes about a
+  -- third of the time JSON did (measured: 0.7 ms -> see docs/perf).
+  local ok, saved = pcall(vim.mpack.decode, data)
   if not ok or type(saved) ~= 'table' or saved.key ~= cache_key(theme) or type(saved.groups) ~= 'table' then return false end
   applying = true
-  for name, def in pairs(saved.groups) do
-    -- Without an explicit (empty) cterm table Neovim copies bold/italic into the
-    -- 256-colour attributes too, and the result would differ from a fresh start.
-    if def.cterm == nil then def.cterm = {} end
-    vim.api.nvim_set_hl(0, name, def)
-  end
+  local set_hl = vim.api.nvim_set_hl
+  for name, def in pairs(saved.groups) do set_hl(0, name, def) end
   local shades = {}
   for _, bg in ipairs(saved.shades or {}) do shades[bg] = true end
   M.shades = shades
@@ -233,9 +231,16 @@ end
 
 local function write_cache(theme)
   vim.fn.mkdir(cache_dir, 'p')
-  local fd = io.open(cache_file(theme), 'w')
+  local fd = io.open(cache_file(theme), 'wb')
   if not fd then return end
-  fd:write(vim.json.encode({ key = cache_key(theme), shades = vim.tbl_keys(M.shades), groups = vim.api.nvim_get_hl(0, {}) }))
+  local groups = vim.api.nvim_get_hl(0, {})
+  for _, def in pairs(groups) do
+    -- Without an explicit (empty) cterm table Neovim copies bold/italic into the
+    -- 256-colour attributes when replaying, and the result would differ from a
+    -- fresh start. Stored here so replaying is a plain loop.
+    if def.cterm == nil then def.cterm = vim.empty_dict() end
+  end
+  fd:write(vim.mpack.encode({ key = cache_key(theme), shades = vim.tbl_keys(M.shades), groups = groups }))
   fd:close()
 end
 

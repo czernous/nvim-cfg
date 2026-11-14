@@ -23,12 +23,15 @@ require('lazy').setup('czernous.plugins', {
   defaults = { lazy = true },
   -- No plugin here uses luarocks; disabling it avoids health errors and a bootstrap.
   rocks = { enabled = false },
+  -- Nor do we read other package formats' spec files (saves a scan at startup).
+  pkg = { enabled = false },
   change_detection = { notify = false },
   performance = {
     rtp = {
-      -- Built-in plugins this config never uses. (osc52 stays on: it lets
-      -- <leader>y copy through the terminal itself when no clipboard tool is installed.)
-      disabled_plugins = { 'gzip', 'tarPlugin', 'tohtml', 'tutor', 'zipPlugin', 'rplugin', 'spellfile', 'netrwPlugin' },
+      -- Built-in plugins this config never uses at startup. (osc52 stays on: it
+      -- lets <leader>y copy through the terminal itself when no clipboard tool is
+      -- installed. matchit is loaded with the first file: see init.lua.)
+      disabled_plugins = { 'gzip', 'tarPlugin', 'tohtml', 'tutor', 'zipPlugin', 'rplugin', 'spellfile', 'netrwPlugin', 'matchit' },
     },
   },
 })

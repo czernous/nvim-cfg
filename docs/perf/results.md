@@ -66,3 +66,30 @@ Per-plugin split: `docs/perf/data/allocation-by-autocmd-group-final.txt` (only h
 - Three per-keystroke allocation figures went up (blink.cmp in insert mode, semantic tokens on scroll).
 - The default theme is a stand-in (Catppuccin, to match the owner's terminal); a calmer default and the Stylix hookup are later work.
 - JS/TS and C# could not be exercised end to end on this machine (no Node/Bun; csharp-ls not on `$PATH`).
+
+## Addendum: startup in the owner's real terminal (2026-11-14, later)
+
+`tests/bench.sh` runs Neovim without a screen, which hides costs that only exist with a
+terminal UI attached. The owner's own `--startuptime` log (`nvim .` in their terminal)
+showed 20.8 ms: 5.5 ms Neovim itself, 6.6 ms the plugin manager, ~2.3 ms applying the
+cached theme, 2.4 ms reading the history file (ShaDa), the rest keymaps/options/statusline.
+
+Changes made from that log: the history file is read just after the first screen instead
+of before it; the theme cache is stored as msgpack instead of JSON; lazy.nvim's package-spec
+scan is off; extended `%` matching loads with the first file.
+
+CPU time from process start to UIEnter in a terminal UI (`nvim .`, 25 runs, the figure the
+start screen shows; measured through a pseudo-terminal, so absolute values are indicative):
+
+| | Before | After |
+|---|---|---|
+| fastest | 14.6 ms | 11.0 ms |
+| median | 20.1 ms | 17.5 ms |
+
+Headless ready (`nvim .`): 10.9 → 9.3 ms fastest (bare Neovim 4.3 ms).
+
+## Addendum: file explorer
+
+Measured first/later opens of `<leader>pv` on this machine: built-in netrw 693 ms / 7–14 ms
+(it looks up remote-file programs on `$PATH` when it loads); oil.nvim 34 ms / 0.2–1 ms.
+oil.nvim is used; a check fails if the first open exceeds 200 ms.
