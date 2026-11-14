@@ -1,7 +1,12 @@
 # Performance baseline
 
 Recorded 2026-11-14 with `./tests/bench.sh --runs 12 --label baseline`, before any stage 2a change.
-Raw data: `tests/bench/baseline.json`. Two full passes agreed within 15% on every measure.
+Raw data: `tests/bench/baseline.json`. Two full passes agreed within 15% **on the fastest run** of
+every measure; medians and maxima (shown below) varied more — e.g. bare-launch median 10.9 vs 18.0 ms.
+
+> **Superseded for comparisons:** this baseline was taken with the AppImage build. The like-for-like
+> baseline on the unpacked Neovim is `docs/perf/data/baseline-unpacked.json` (launch 76.1 ms fastest;
+> allocation figures identical; file-open timings unstable in that run and not quotable).
 
 **Machine:** Intel(R) Core(TM) Ultra 7 255U, 14 threads, WSL2. Neovim 0.12.4+v0.12.4. `$PATH`: 101 entries, 86 of them Windows mounts (`/mnt/...`).
 Benchmarks use the real interactive `$PATH` on purpose.

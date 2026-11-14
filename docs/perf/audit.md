@@ -1,25 +1,33 @@
 # Stage 2a audit — plugins, performance, config critique
 
-2026-11-14 · Neovim 0.12.4 · numbers from `tests/bench.sh` (fastest of 10 runs unless noted;
-two passes agreeing within 15%) · baseline: `docs/perf/baseline.md` · nothing here has been
-changed in the live config yet. **Each verdict needs the owner's yes/no.**
+2026-11-14 · Neovim 0.12.4 (unpacked build) · timings from `tests/bench.sh`, fastest of
+10–12 runs · raw data in `docs/perf/data/` · nothing here has been changed in the live
+config yet. **Each verdict needs the owner's yes/no.**
+
+**How far to trust each number.** Launch and allocation figures agreed between two full
+passes (within 15% on the fastest run) and are quotable. File-open timings did **not**
+agree between passes on this (busy, shared) machine and are deliberately not quoted.
+Per-plugin tables (§2, §3) come from single profiling runs saved in `docs/perf/data/`;
+treat them as indicative, not exact.
 
 ## 1. Headline
 
-| | Launch (wall clock) | Notes |
+| | Launch, wall clock | Source |
 |---|---|---|
-| Bare Neovim, no config | 8.5–10 ms | the floor on this machine |
-| Config today | 71–89 ms | 27 of 30 plugins load before the first screen |
-| **Lean prototype** (same plugins, loaded on first use) | **13.9 ms** | sandbox; LSP, highlighting, lazy-loading verified working |
+| Bare Neovim, no config | 5.1–11.6 ms | floor measured inside each run |
+| Config today | 76.1 ms | `baseline-unpacked.json` |
+| **Lean prototype** (same plugins, loaded on first use) | **13.9 ms** | `cand-lean.json`; LSP, highlighting, lazy-loading verified working |
 
 The owner's 15 ms target is reachable **by loading on demand alone** — no plugin has to be
-given up for speed. Side effect: opening a Go file until highlighted went 114 → 42 ms,
-Java 114 → 49 ms. (Before all this, the AppImage packaging cost a further ~75 ms per launch;
-replaced with an unpacked build at `~/.local/bin/nvim`.)
+given up for speed. The prototype's config adds roughly 9 ms on top of bare Neovim.
+Opening files also gets faster (less to load first), but those timings were unstable
+here and will be re-measured in the final benchmark. (Separately, the AppImage packaging
+cost ~75 ms per launch; replaced with an unpacked build at `~/.local/bin/nvim`. An earlier
+version of this document compared an AppImage baseline with unpacked candidates — corrected.)
 
 ## 2. Where startup time goes today
 
-Per-plugin load time at startup (lazy.nvim profile), total ≈ 57 ms:
+Per-plugin load time at startup (lazy.nvim profile, one run: `data/plugin-load-profile.txt`), total ≈ 57 ms:
 
 | Plugin | ms | Why it loads at startup |
 |---|---|---|
@@ -34,7 +42,10 @@ Per-plugin load time at startup (lazy.nvim profile), total ≈ 57 ms:
 
 ## 3. Hot paths: memory allocated per event
 
-Exact figures (bytes of Lua memory per event, GC stopped), attributed per plugin:
+Bytes of Lua memory per event (GC stopped), attributed per autocmd group (one run:
+`data/allocation-by-autocmd-group.txt`). Totals per event are exact and repeatable
+(`baseline-unpacked.json`); the per-plugin split is measured group by group and does not
+sum exactly to the total (groups overlap in what they trigger):
 
 | Event (how often) | Who | Bytes/event |
 |---|---|---|
@@ -52,7 +63,7 @@ With blink.cmp loaded the insert-mode figure is ~4,000 total; with no completion
 | # | Plugin | Verdict | Reason | Risk / cost |
 |---|---|---|---|---|
 | 1 | lazy.nvim | **Keep** (see ADR 0001) | built-in `vim.pack` measured no faster (14.1 vs 13.9 ms) and has no lazy-loading; ours would be ~80 lines to maintain (the quick spike version already broke completion triggering) | one env hook for Nix (`NVIM_PLUGIN_ROOT`), tested working offline from a read-only folder |
-| 2 | nvim-cmp, LuaSnip, cmp_luasnip, cmp-nvim-lsp, cmp-path | **Replace with blink.cmp** (pure-Lua mode, no binary) | menu appears ~4 ms after a keystroke vs ~70–80 ms; 5 plugins → 1; 13.5 KB → ~2.4 KB per insert-mode cursor move; LuaSnip's regex helper needs a build step | Tab/Enter behaviour re-created; snippets via built-in `vim.snippet` + friendly-snippets |
+| 2 | nvim-cmp, LuaSnip, cmp_luasnip, cmp-nvim-lsp, cmp-path | **Replace with blink.cmp** (pure-Lua mode, no binary) | 5 plugins → 1; ~13.4 KB → ~2.4 KB per insert-mode cursor move; LuaSnip's regex helper needs a build step. Menu appears ~4 ms after a keystroke vs ~75 ms — **but most of nvim-cmp's delay is its default 60 ms wait (`performance.debounce`), a setting that could simply be lowered**, so speed alone is not the reason | Tab/Enter behaviour re-created; snippets via built-in `vim.snippet` + friendly-snippets |
 | 2b | — alternative | built-in completion (`autocomplete`) | fastest (1–2 ms) and zero plugins, but plainer: no docs side-window, weaker snippets/fuzzy | owner's choice; recommendation is blink for the IDE feel |
 | 3 | friendly-snippets | Keep | snippet collection used by blink | — |
 | 4 | onedark, catppuccin | **Replace with a base16 palette** (`mini.base16`, 1 plugin) | owner wants Stylix-driven theming; launch unchanged (14.4 ms); catppuccin was never used | selection highlight must be checked under transparency (lost its background in the prototype) |
@@ -133,7 +144,8 @@ Structure: the registry works; group names should match the which-key prefixes o
   invocation (~1 s warm, ~2 s cold, even when nothing changes).
 
 ### Java formatting speed (owner question)
-The ~1 s is Gradle's start-up + configuration time, not Neovim's and not Spotless's
+The ~1 s (two hand-timed runs on the owner's project: 0.98 s warm, 2.03 s cold; not part of
+the benchmark) is Gradle's start-up + configuration time, not Neovim's and not Spotless's
 formatting itself. Options: (a) keep exactness, accept ~1 s, async (today); (b) make
 `<leader>f` instant by giving jdtls the project's Eclipse formatter file (same formatter
 Spotless uses) and run real Spotless only on demand / before commit; (c) both: instant
