@@ -50,16 +50,6 @@ local function in_project(name, title, extra)
   return pickers[name .. ':project']
 end
 
--- The built-in file explorer is kept out of startup (options.lua); load it the
--- first time it is asked for.
-local function explorer()
-  if vim.fn.exists(':Explore') ~= 2 then
-    vim.g.loaded_netrwPlugin = nil
-    vim.cmd.packadd('netrw')
-  end
-  vim.cmd('Explore')
-end
-
 local function harpoon() return require('harpoon') end
 local function gs() return require('gitsigns') end
 local function ts_select(obj) return function() require('nvim-treesitter-textobjects.select').select_textobject(obj, 'textobjects') end end
@@ -82,9 +72,9 @@ M.groups = {
       { 'n', '<leader>/', function()
         require('telescope.builtin').current_buffer_fuzzy_find(require('telescope.themes').get_dropdown({ previewer = false }))
       end, desc = 'Search in this file' },
-      -- Neovim's built-in file explorer on the current file's folder. <CR> opens,
-      -- `-` goes up a folder, % creates a file, d a folder, R renames, D deletes.
-      { 'n', '<leader>pv', function() explorer() end, desc = 'Project view (file explorer)' },
+      -- The folder of the current file as an editable list: rename, move, delete
+      -- files by editing lines, then :w. `-` goes up a folder, <CR> opens.
+      { 'n', '<leader>pv', '<cmd>Oil<cr>', desc = 'Project view (folder as an editable list)' },
     },
   },
   {

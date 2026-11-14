@@ -24,7 +24,7 @@ Find any key from inside Neovim: `<leader>pk` (search keys by what they do), or 
 |---|---|---|---|
 | `<leader>f` | LSP format / Neoformat; Spotless (~1 s) in Gradle projects | the project's formatter program if on `$PATH`, else the language server: always instant | Spotless via Gradle felt slow |
 | `K` | LSP hover; in files with no language server, Vim's own lookup (man page) or nothing | documentation; if no server is attached: Vim's own lookup in help/shell/C/make files, otherwise a message saying no server is running (or that it is still starting) | failed silently in e.g. Kotlin files |
-| `<leader>pv` | built-in file explorer, loaded at startup, with a help banner | the same explorer, loaded on first use, no banner | `nvim .` shows the start screen; nothing loads until asked for |
+| `<leader>pv` | built-in file explorer | the folder as an editable list (oil.nvim), with a hint bar: `Enter` open, `-` up, `q` close; edit a line + `:w` to rename/move, `dd` + `:w` to delete, `o` + a name + `:w` for a new file | measured: first open 34 ms vs 693 ms for the built-in one on this machine |
 | `<leader>y`, `<leader>d` | normal mode only | also on a visual selection | the usual way to use them |
 | `<leader>u` | undotree plugin | Neovim's built-in undo tree | one plugin fewer |
 | `<C-space>` / `<M-space>` | own selection code | Neovim's built-in `an` / `in` (select code, grow, shrink) | built-in first |
