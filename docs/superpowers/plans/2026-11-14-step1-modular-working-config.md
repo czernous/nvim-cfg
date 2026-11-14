@@ -37,7 +37,7 @@
 init.lua                         require('czernous')
 lua/czernous/init.lua            load order: options, keymaps, lazy, theme, lsp
 lua/czernous/options.lua         (was set.lua) options + diagnostic display
-lua/czernous/keymaps.lua         (was remap.lua) global, plugin-independent keys
+lua/czernous/keymaps.lua         (was remap.lua) THE single keymap registry — every key, grouped by purpose
 lua/czernous/lazy.lua            bootstrap + setup('czernous.plugins')
 lua/czernous/theme.lua           colorscheme + transparency (single theme spot)
 lua/czernous/lsp.lua             server list, PATH-based enable, LspAttach keys, format
@@ -85,13 +85,19 @@ Deleted: `lua/czernous/cfg/`, `set.lua`, `remap.lua`, old plugin files merged ab
 
 **Interfaces:**
 - Consumes: Task 1 `check.global`.
-- Produces: module names in File Structure above. `lua/czernous/lsp.lua` is created here holding the old `lsp-config.lua` contents unchanged (Task 3 rewrites it), required from `init.lua` after `lazy`.
+- Produces: module names in File Structure above, and the keymap registry (owner: keymaps are messy/duplicated/hard to manage → one file):
+  - `lua/czernous/keymaps.lua` returns `M` with groups `M.groups = { {name='Files & search', keys={…}}, {name='LSP', …}, {name='Git', …}, {name='Editing', …}, {name='Navigation', …}, {name='Toggles', …} }`; each key `{ mode, lhs, rhs, desc, plugin? }` where `rhs` is a string or function and `plugin` names the lazy.nvim plugin it needs.
+  - `M.setup()` sets every key with no `plugin`.
+  - `M.lazy(plugin) -> LazyKeysSpec[]` — used as `keys = require('czernous.keymaps').lazy('telescope.nvim')` in plugin specs, so plugin keys stay in the registry yet lazy-load the plugin.
+  - `M.lsp(bufnr)` and `M.gitsigns(bufnr)` set the buffer-local groups (called from LspAttach / gitsigns `on_attach`).
+  - `M.all() -> {mode,lhs,desc,group}[]` — used by the check's `--keymaps` table and which-key groups. `lua/czernous/lsp.lua` is created here holding the old `lsp-config.lua` contents unchanged (Task 3 rewrites it), required from `init.lua` after `lazy`.
 
-- [ ] **Step 1: Add failing checks** — `no_cfg_dir` (`lua/czernous/cfg` absent); `plugin_specs_have_no_side_effects`: for each `lua/czernous/plugins/*.lua`, `dofile` it and assert `nvim_get_keymap` for n/x/o/v/i is unchanged and the return value is a table.
+- [ ] **Step 1: Add failing checks** — `keymaps_central` (every entry in `check.recorded` has `src` ending in `lua/czernous/keymaps.lua`); `duplicate_actions_report` (non-failing: prints groups of keys whose rhs is the same string/function, for the owner to choose — e.g. `<C-p>` & `<leader>pf`; also fails on the same mode+lhs registered twice); `no_cfg_dir` (`lua/czernous/cfg` absent); `plugin_specs_have_no_side_effects`: for each `lua/czernous/plugins/*.lua`, `dofile` it and assert `nvim_get_keymap` for n/x/o/v/i is unchanged and the return value is a table.
 - [ ] **Step 2: Run** `./tests/check.sh` → both FAIL.
 - [ ] **Step 3: Move code** — each `cfg/*-config.lua` body becomes the `config`/`opts` of its plugin spec; top-level `vim.keymap.set` in spec files becomes `keys = {…}` entries (with `desc`); merge duplicates (single which-key, single devicons, mason set up once). Remove dead code: `telescope_live_grep_open_files`, unused `telescope-ui-select` dependency on harpoon. Behaviour otherwise identical — do not change keys here.
 - [ ] **Step 4: Run** `./tests/check.sh` → new checks PASS; no new FAILs vs baseline.
-- [ ] **Step 5: Commit** — `refactor: one job per file, plugin specs own their config`.
+- [ ] **Step 5: Commit** — `refactor: one job per file, single keymap registry`.
+- [ ] **Step 6: Owner checkpoint** — show the duplicate-actions report; owner picks which duplicates to drop (applied in Task 5).
 
 ### Task 3: LSP from `$PATH`, Mason as fallback, per-server overrides
 
@@ -138,7 +144,7 @@ Deleted: `lua/czernous/cfg/`, `set.lua`, `remap.lua`, old plugin files merged ab
 ### Task 5: Keymaps — descriptions, no clashes, diagnostics, format, source
 
 **Files:**
-- Modify: `lua/czernous/keymaps.lua`, `lua/czernous/options.lua`, `lua/czernous/lsp.lua`, plugin spec files with keys, `lua/czernous/plugins/ui.lua` (which-key groups)
+- Modify: `lua/czernous/keymaps.lua` (all key changes happen here only), `lua/czernous/options.lua`, `lua/czernous/lsp.lua`, `lua/czernous/plugins/ui.lua` (which-key groups derived from `M.groups`)
 
 **Interfaces:**
 - Produces in `lua/czernous/lsp.lua`: `M.format()` — if any client attached to the buffer supports `textDocument/formatting`, `vim.lsp.buf.format()`; else `vim.cmd('Neoformat')`. Bound to `<leader>f` (`desc = 'Format buffer'`).
