@@ -51,14 +51,14 @@ function M.setup()
 
   vim.api.nvim_create_autocmd('LspAttach', {
     group = vim.api.nvim_create_augroup('czernous_lsp', { clear = true }),
-    desc = 'LSP keymaps and :Format',
-    callback = function(event)
-      require('czernous.keymaps').lsp(event.buf)
-      vim.api.nvim_buf_create_user_command(event.buf, 'Format', function()
-        require('czernous.format').format() -- same as <leader>f
-      end, { desc = 'Format current buffer (same as <leader>f)' })
-    end,
+    desc = 'LSP keymaps',
+    callback = function(event) require('czernous.keymaps').lsp(event.buf) end,
   })
+  -- :Format is <leader>f as a command. Everywhere, not only where a language
+  -- server is attached: <leader>f also formats with a formatter program alone.
+  vim.api.nvim_create_user_command('Format', function()
+    require('czernous.format').format()
+  end, { desc = 'Format this file (same as <leader>f)' })
 
   vim.lsp.config('*', {
     -- Tell every server what the completion engine supports (snippets, lazy

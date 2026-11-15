@@ -37,6 +37,10 @@ palette you picked) under the name `czernous-nvim` (`~/.local/share/czernous-nvi
 
 ## First run on a Nix machine
 
+The `nix` job in `.github/workflows/checks.yml` does this on every push (evaluate,
+build, start), and the weekly `update` job creates and moves `flake.lock`; see
+"Automatic updates" in the README.
+
 ```sh
 nix flake check                 # evaluates everything
 nix build .#neovim              # the self-contained package

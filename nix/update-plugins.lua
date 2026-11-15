@@ -81,6 +81,10 @@ for _, name in ipairs(names) do
       failed = failed + 1
     elseif commit ~= entry.commit then
       print(('  ^  %-28s %s -> %s  (%s)'):format(name, entry.commit:sub(1, 7), commit:sub(1, 7), label))
+      -- where to read what changed (GitHub's address for "everything between two commits")
+      if source.url:find('^https://github%.com/') then
+        print(('     %s/compare/%s...%s'):format(source.url:gsub('%.git$', ''), entry.commit:sub(1, 12), commit:sub(1, 12)))
+      end
       entry.commit = commit
       changed = changed + 1
     end

@@ -842,8 +842,8 @@ check.global('special_buffers_are_quiet', function()
 end)
 
 check.global('format_command_matches_key', function()
-  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua')
-  vim.wait(20000, function() return #vim.lsp.get_clients({ bufnr = 0 }) > 0 end, 100)
+  -- a file no language server handles: the command must be there regardless
+  vim.cmd('silent! %bwipeout!'); vim.cmd('enew'); vim.bo.filetype = 'text'
   local fmt = require('czernous.format')
   local real, called = fmt.format, false
   fmt.format = function() called = true end
@@ -989,9 +989,11 @@ check.global('no_blocking_calls', function()
   end
   pcall(vim.api.nvim_eval_statusline, vim.o.statusline, {})
   check.hot = false
-  local function allowed(src, call)
+  --- `seen_running`: the call was recorded while running (entries marked
+  --- `runtime` excuse only those, never the same call written in the source).
+  local function allowed(src, call, seen_running)
     for _, entry in ipairs(allow.blocking) do
-      if src:find(entry.file, 1, true) and call == entry.call then return true end
+      if src:find(entry.file, 1, true) and call == entry.call and (seen_running or not entry.runtime) then return true end
     end
     return false
   end
@@ -1001,7 +1003,7 @@ check.global('no_blocking_calls', function()
   for _, c in ipairs(check.blocking) do
     local call = c.name:match('^[^(]+') -- 'vim.fn.executable(rg)' -> 'vim.fn.executable'
     local id = call .. '@' .. c.src
-    if not allowed(c.src, call) and not seen[id] then
+    if not allowed(c.src, call, true) and not seen[id] then
       seen[id] = true
       bad[#bad + 1] = ('%s at %s (%s)'):format(c.name, c.src, c.phase)
     end
@@ -1400,6 +1402,10 @@ check.global('hover_key_explains_missing_server', function()
   check.snapshot_messages()
   local explained = said and said:lower():find('kotlin', 1, true) and said:lower():find('language server', 1, true)
   -- and with a server attached K still opens the documentation popup
+  -- (that half needs the Lua language server; without it only the message is checked)
+  if vim.fn.executable('lua-language-server') == 0 then
+    return (ok and explained and #check.errors == before) and true or false, ('no server: said %q'):format(tostring(said))
+  end
   vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/lua/init.lua')
   vim.wait(20000, function() local c = vim.lsp.get_clients({ bufnr = 0 })[1]; return c and c:supports_method('textDocument/hover', 0) end, 100)
   vim.api.nvim_win_set_cursor(0, { 5, 0 }) -- on `print`
@@ -1853,6 +1859,8 @@ check.global('fixes_are_previewed', function()
   if not lock:find('"actions-preview.nvim"', 1, true) then return false, 'actions-preview.nvim not installed' end
   local keys = require('czernous.keymaps')
   if not keys.fixes then return false, 'keymaps has no fixes() entry point' end
+  -- two of the keys exist only where a language server is attached
+  if vim.fn.executable('lua-language-server') == 0 then return 'skip', 'lua-language-server not on PATH' end
   -- the fix keys all go through the previewing picker
   local called = 0
   local ok, ap = pcall(require, 'actions-preview')

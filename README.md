@@ -187,6 +187,34 @@ nix run .#update-plugins                        # in a clone: update the plugins
 Details, the NixOS and home-manager snippets, and what is and is not yet
 verified: **`docs/nix.md`**.
 
+## Automatic updates
+
+Two jobs on GitHub keep the config on the newest versions without breaking it.
+
+| Job | When | What it does |
+|---|---|---|
+| `checks` | every push, or by hand | On a clean Ubuntu machine: newest stable Neovim, plugins at the `lazy-lock.json` commits, then all checks and tripwires. Separately: evaluates the flake, builds the Nix package and starts it. |
+| `update` | Mondays 05:17 UTC, or by hand | Moves every plugin to its newest commit and nixpkgs to its newest revision, puts that on the branch `updates/auto`, and runs `checks` on it. |
+
+What `update` does with the result:
+
+- **everything passes**: it opens a pull request (or refreshes the open one) listing
+  what moved, with a link per plugin to the changes. Merging it is the only manual step.
+- **something fails**: it opens an issue (or adds to the open one) with what moved and
+  which checks failed. Nothing is offered for merging; the next run tries again.
+- **nothing moved**: the checks still run on the main branch, so a new Neovim release
+  is tested against the config as it is; a failure becomes an issue.
+
+Nothing reaches the main branch by itself. Scheduled runs only start once
+`.github/workflows/` is on the default branch.
+
+One-time setting for the pull request: repository *Settings > Actions > General >
+Allow GitHub Actions to create and approve pull requests*. Without it the job opens an
+issue containing the link to create the pull request.
+
+To run either by hand: *Actions* tab, pick the job, *Run workflow*. The reasons for
+this shape are in `docs/adr/0002-update-jobs.md`.
+
 ## Changing things
 
 | To | Do |
@@ -197,7 +225,7 @@ verified: **`docs/nix.md`**.
 | add a debugger | `M.debuggers` in `lua/czernous/debugging.lua` |
 | add a test command | a builder in `lua/czernous/test.lua` |
 | add a plugin | a spec in `lua/czernous/plugins/`, saying what loads it (a key, a command, an event); then run the checks |
-| update plugins | `:Lazy update` (or `nix run .#update-plugins`), then run the checks and commit `lazy-lock.json` |
+| update plugins | merge the weekly update pull request (see Automatic updates); or by hand: `:Lazy update` (or `nix run .#update-plugins`), run the checks, commit `lazy-lock.json` |
 | change an option | `lua/czernous/options.lua` |
 
 Every file starts with a comment saying what it is for and why it is the way it is.
@@ -242,6 +270,7 @@ lua/czernous/
 after/lsp/*.lua          per-server settings
 palettes/*.json          built-in colour palettes
 nix/, flake.nix          Nix package, devshells, module, plugin updater
+.github/                 the checks and the weekly update, run by GitHub
 tests/                   checks, tripwires, benchmarks, fixtures
 docs/                    measurements, decisions, Nix notes
 ```

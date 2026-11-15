@@ -19,5 +19,13 @@ return {
     -- format_does_not_search_path guards that.)
     { file = 'lua/czernous/format.lua', call = 'vim.fn.executable', reason = 'conform verifying an absolute path' },
     { file = 'lua/czernous/format.lua', call = 'vim.fn.exepath', reason = 'conform resolving an absolute path' },
+    -- `runtime = true`: only for calls a plugin makes beneath this line while
+    -- running; the same call written in the file itself still fails the check.
+    -- nvim-lspconfig's rust_analyzer looks for cargo and asks it for the sysroot
+    -- when it picks a project root (measured: ~10 ms per Rust file opened). It is
+    -- seen under our vim.lsp.enable() only when a Rust file is already open at
+    -- that moment; otherwise Neovim calls it directly.
+    { file = 'lua/czernous/lsp.lua', call = 'vim.fn.executable', runtime = true, reason = 'nvim-lspconfig rust_analyzer root lookup' },
+    { file = 'lua/czernous/lsp.lua', call = 'vim.system', runtime = true, reason = 'nvim-lspconfig rust_analyzer sysroot lookup' },
   },
 }
