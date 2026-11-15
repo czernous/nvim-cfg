@@ -34,7 +34,7 @@ end
 
 check.startup_lookups = {}
 check.exe_calls = {}
-check.exe_calls_config = {}
+check.exe_calls_format = {}
 check.blocking = {}      -- blocking calls made by config code: { name, src, phase }
 check.global_writes = {} -- globals created by config code: { name, src }
 check.hot = false        -- true while the check fires hot-path events
@@ -59,9 +59,13 @@ local orig_executable = vim.fn.executable
 vim.fn.executable = function(name)
   if vim.v.vim_did_enter == 0 then table.insert(check.startup_lookups, name) end
   check.exe_calls[name] = (check.exe_calls[name] or 0) + 1
-  -- the same, but only searches made by config code or by a plugin it called
-  -- (a parser being installed in the background also looks programs up)
-  if config_caller() then check.exe_calls_config[name] = (check.exe_calls_config[name] or 0) + 1 end
+  -- the same, but only searches made by the formatting code or by a plugin it
+  -- called (other things look programs up in the background meanwhile: a
+  -- parser being installed, a language server's settings being read)
+  local caller = config_caller()
+  if caller and (caller:find('lua/czernous/format.lua', 1, true) or caller:find('lua/czernous/tools.lua', 1, true)) then
+    check.exe_calls_format[name] = (check.exe_calls_format[name] or 0) + 1
+  end
   record_blocking('vim.fn.executable(' .. tostring(name) .. ')')
   return orig_executable(name)
 end
@@ -1753,10 +1757,10 @@ check.global('format_does_not_search_path', function()
   vim.fn.writefile({ 'x = 1' }, dir .. '/f.py')
   vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/f.py')
   local fmt = require('czernous.format')
-  -- searches by name (not by absolute path) made by the config or beneath it
+  -- searches by name (not by absolute path) made by the formatting code or beneath it
   local function searches()
     local seen = {}
-    for name, count in pairs(check.exe_calls_config) do if name:sub(1, 1) ~= '/' then seen[name] = count end end
+    for name, count in pairs(check.exe_calls_format) do if name:sub(1, 1) ~= '/' then seen[name] = count end end
     return seen
   end
   count_warnings(function() fmt.format(); vim.wait(2500) end) -- first press: background lookup
