@@ -34,6 +34,7 @@ end
 
 check.startup_lookups = {}
 check.exe_calls = {}
+check.exe_calls_config = {}
 check.blocking = {}      -- blocking calls made by config code: { name, src, phase }
 check.global_writes = {} -- globals created by config code: { name, src }
 check.hot = false        -- true while the check fires hot-path events
@@ -58,6 +59,9 @@ local orig_executable = vim.fn.executable
 vim.fn.executable = function(name)
   if vim.v.vim_did_enter == 0 then table.insert(check.startup_lookups, name) end
   check.exe_calls[name] = (check.exe_calls[name] or 0) + 1
+  -- the same, but only searches made by config code or by a plugin it called
+  -- (a parser being installed in the background also looks programs up)
+  if config_caller() then check.exe_calls_config[name] = (check.exe_calls_config[name] or 0) + 1 end
   record_blocking('vim.fn.executable(' .. tostring(name) .. ')')
   return orig_executable(name)
 end
@@ -1220,12 +1224,18 @@ check.global('launch_within_budget', function()
   -- spawn -> ready (shutdown excluded), config vs bare Neovim. Noise only ever adds
   -- time, so the fastest run is what counts: re-measure (up to 3 rounds) before
   -- calling it a failure.
-  local bare, config = math.huge, math.huge
+  -- The budget is 12 ms on a machine where bare Neovim is ready in 4.5 ms (the
+  -- machines this was tuned on), and grows in proportion on a slower one: a
+  -- GitHub runner starts bare Neovim in ~13 ms, and everything else is that
+  -- much slower there too.
+  local bare, config, budget = math.huge, math.huge, 12
   for _ = 1, 3 do
     bare, config = math.min(bare, fastest({ '-u', 'NONE' })), math.min(config, fastest({}))
-    if config - bare <= 12 then break end
+    budget = 12 * math.max(1, bare / 4.5)
+    if config - bare <= budget then break end
   end
-  return config - bare <= 12, ('ready in %.1f ms vs bare %.1f ms: config adds %.1f ms (budget 12)'):format(config, bare, config - bare)
+  return config - bare <= budget,
+    ('ready in %.1f ms vs bare %.1f ms: config adds %.1f ms (budget %.1f)'):format(config, bare, config - bare, budget)
 end, { early = true })
 
 -- Lazily loaded plugins must work from every way in.
@@ -1743,10 +1753,11 @@ check.global('format_does_not_search_path', function()
   vim.fn.writefile({ 'x = 1' }, dir .. '/f.py')
   vim.cmd('silent! %bwipeout!'); vim.cmd.edit(dir .. '/f.py')
   local fmt = require('czernous.format')
+  -- searches by name (not by absolute path) made by the config or beneath it
   local function searches()
-    local n = 0
-    for name, count in pairs(check.exe_calls) do if name:sub(1, 1) ~= '/' then n = n + count end end
-    return n
+    local seen = {}
+    for name, count in pairs(check.exe_calls_config) do if name:sub(1, 1) ~= '/' then seen[name] = count end end
+    return seen
   end
   count_warnings(function() fmt.format(); vim.wait(2500) end) -- first press: background lookup
   local before = searches()
@@ -1754,7 +1765,13 @@ check.global('format_does_not_search_path', function()
   count_warnings(function() fmt.format() end)                 -- later presses: nothing to look up
   local blocked_ms = (vim.uv.hrtime() - t0) / 1e6
   vim.wait(300)
-  return searches() == before and blocked_ms < 30, ('PATH searches on a repeat press: %d; blocked for %.0f ms'):format(searches() - before, blocked_ms)
+  local again = {}
+  for name, count in pairs(searches()) do
+    if count ~= (before[name] or 0) then again[#again + 1] = name end
+  end
+  table.sort(again)
+  return #again == 0 and blocked_ms < 30,
+    ('searched $PATH again on a repeat press for: %s; blocked for %.0f ms'):format(table.concat(again, ', '), blocked_ms)
 end)
 
 check.global('clipboard_fallback_enabled', function()
@@ -1936,7 +1953,8 @@ end)
 -- Language checks
 ---------------------------------------------------------------------------
 check.lang({ name = 'go', file = fixtures .. '/go/main.go', server = 'gopls', exe = 'gopls' })
-check.lang({ name = 'rust', file = fixtures .. '/rust/src/main.rs', server = 'rust_analyzer', exe = 'rust-analyzer', timeout_ms = 60000 })
+check.lang({ name = 'rust', file = fixtures .. '/rust/src/main.rs', server = 'rust_analyzer', exe = 'rust-analyzer', timeout_ms = 60000,
+  probe = { 'rust-analyzer', '--version' } })
 check.lang({ name = 'csharp', file = fixtures .. '/csharp/Program.cs', server = 'csharp_ls', exe = 'csharp-ls', timeout_ms = 60000 })
 check.lang({ name = 'ts', file = fixtures .. '/ts/index.ts', server = 'vtsls', exe = 'vtsls' })
 check.lang({ name = 'java', file = fixtures .. '/java/src/Main.java', server = 'jdtls', exe = 'jdtls', timeout_ms = 90000 })
@@ -2446,6 +2464,14 @@ local function run_lang(spec)
 
   if vim.fn.executable(spec.exe) ~= 1 then
     return report('SKIP', name .. ':lsp', spec.exe .. ' not on PATH')
+  end
+  -- on $PATH but unable to run: e.g. rustup's stand-in for a rust-analyzer
+  -- that was never installed (the config disables such a server by itself)
+  if spec.probe then
+    local started, probe = pcall(vim.system, spec.probe, { text = true })
+    if not started or probe:wait(15000).code ~= 0 then
+      return report('SKIP', name .. ':lsp', spec.exe .. ' is on PATH but does not run (`' .. table.concat(spec.probe, ' ') .. '` fails)')
+    end
   end
   local timeout = spec.timeout_ms or 20000
   local client
