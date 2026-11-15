@@ -93,3 +93,29 @@ Headless ready (`nvim .`): 10.9 → 9.3 ms fastest (bare Neovim 4.3 ms).
 Measured first/later opens of `<leader>pv` on this machine: built-in netrw 693 ms / 7–14 ms
 (it looks up remote-file programs on `$PATH` when it loads); oil.nvim 34 ms / 0.2–1 ms.
 oil.nvim is used; a check fails if the first open exceeds 200 ms.
+
+# Stage 2b and 3 results (2026-11-15)
+
+`./tests/bench.sh`, headless, three rounds of 10 starts; fastest / median per round, ms.
+
+| | Stage 2a end | Now |
+|---|---|---|
+| **Ready** | 9.3–10.8 fastest | 9.0, 9.4, 9.6 fastest; 10.6–11.2 median |
+| Bare Neovim ready (the floor) | 4.5 | 4.2–4.5 |
+| Completion menu (Go), median | 3.6–6.8 | 5.0–7.4 |
+| Open a Go file until highlighted, fastest | 41.2 | 37.2–43.0 |
+
+Added since 2a without moving these: debugging, test running, fix previews and the
+`fix` hint, the key cheat sheet, full-window help, the folder view's move key and git
+letters, palette theming with the colour rules. Everything new loads on first use.
+
+Theme, process start to ready (14 starts each): building it from scratch 17 ms
+(palette + renderer) against 26 ms with the Catppuccin plugin; cached starts the same.
+Highlight groups replayed per start: 962 with the renderer's defaults, 532 once it is
+told which plugins are installed.
+
+Folder view first open: 20–33 ms with git status letters, 22–29 ms without.
+
+Plugins: 22, none loaded before the first screen except the plugin manager.
+Checks: 130 pass, 3 skipped for tools not installed on this machine (csharp-ls,
+vtsls, dlv); 12 tripwires trip.

@@ -14,7 +14,9 @@
 -- Whatever supplies them, the same rules give the UI one consistent structure:
 --   1. Polarity follows the terminal. Neovim detects a dark or light terminal
 --      ('background'); only a theme of that kind can be active.
---   2. Transparency is all-or-nothing. With `transparent = true`, the theme's
+--   2. Backgrounds are all-or-nothing. With `transparent = false` every surface
+--      has the same background (the palette's), popups told apart by borders.
+--      Transparency likewise: With `transparent = true`, the theme's
 --      own background shades (whatever it paints the editor, popups, menus and
 --      status areas with) are found, and EVERY highlight group using one of them
 --      loses its background -- by scanning all groups, so pickers, completion,
@@ -128,7 +130,9 @@ function M.is_accent(name) return accent_set()[name] == true or M.is_selection(n
 function M.restyle()
   local shades = M.shades
   local selection = vim.api.nvim_get_hl(0, { name = 'Visual', link = false }).bg
-  local popup = vim.api.nvim_get_hl(0, { name = 'NormalFloat', link = false }).bg
+  -- the one background of solid (non-transparent) mode: the editor's own
+  local solid = M.current and M.current.colors and tonumber(M.current.colors.base00:sub(2), 16)
+    or vim.api.nvim_get_hl(0, { name = 'Normal', link = false }).bg
   local border = vim.api.nvim_get_hl(0, { name = 'FloatBorder', link = false }).fg
   local title = vim.api.nvim_get_hl(0, { name = 'FloatTitle', link = false }).fg
   local function fg_of(name) return vim.api.nvim_get_hl(0, { name = name, link = false }).fg end
@@ -147,8 +151,8 @@ function M.restyle()
     -- All-or-nothing, in both directions: with transparency OFF a popup's border
     -- must be as solid as the popup. Themes often give borders no background
     -- (they rely on the editor's), which would leave a see-through frame.
-    if not M.opts.transparent and popup and not def.bg and not def.link and name:find('Border$') then
-      def.bg = popup
+    if not M.opts.transparent and solid and not def.bg and not def.link and name:find('Border$') then
+      def.bg = solid
       vim.api.nvim_set_hl(0, name, def)
     end
     if def.bg and M.is_selection(name) and name ~= 'Visual' and name ~= 'VisualNOS' then
@@ -158,9 +162,16 @@ function M.restyle()
         def.bg, def.ctermbg = selection, nil
         vim.api.nvim_set_hl(0, name, def)
       end
-    elseif M.opts.transparent and def.bg and shades[def.bg] and not M.is_accent(name) then
-      def.bg, def.ctermbg = nil, nil
-      vim.api.nvim_set_hl(0, name, def)
+    elseif def.bg and shades[def.bg] and not def.link and not M.is_accent(name) then
+      -- Rule 2. Transparent: no surface has a background. Solid: every surface
+      -- has the SAME one (the editor's) -- not the renderer's patchwork of
+      -- shades for gutter, popups, status line and pickers. Either way popups
+      -- are told apart by their border, and only accents keep a background.
+      local want = (not M.opts.transparent) and solid or nil
+      if def.bg ~= want then
+        def.bg, def.ctermbg = want, nil
+        vim.api.nvim_set_hl(0, name, def)
+      end
     end
   end
 end
@@ -269,7 +280,7 @@ end
 -- thrown away whenever plugins are updated. Bump CACHE_VERSION when the rules
 -- above change. The key is compared as plain text (hashing it cost 3.9 ms).
 --------------------------------------------------------------------------------
-local CACHE_VERSION = 12
+local CACHE_VERSION = 13
 local cache_dir = vim.fn.stdpath('cache') .. '/czernous-theme'
 
 local function cache_key(theme)

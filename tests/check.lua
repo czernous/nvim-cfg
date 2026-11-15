@@ -608,6 +608,17 @@ check.global('borders_and_titles_look_the_same', function()
     ('borders should be %s (the comment colour %s), titles %s; %d border groups; differing: %s'):format(hex(border) or 'none', hex(comment) or 'none', hex(title) or 'none', seen, table.concat(bad, ', '))
 end)
 
+-- With transparency off the same all-or-nothing rule holds: ONE background
+-- everywhere (editor, gutter, popups and their borders, pickers, status line),
+-- not the renderer's patchwork of shades. Only accents keep a background.
+check.global('solid_mode_has_one_background', function()
+  local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+    "autocmd VimEnter * ++once lua vim.defer_fn(function() local t = require('czernous.theme') pcall(require, 'telescope') require('lazy').load({ plugins = { 'which-key.nvim', 'blink.cmp', 'nvim-treesitter-context', 'gitsigns.nvim' } }) t.toggle_transparency() vim.wait(400) local c = t.current.colors local shade = {} for _, k in ipairs({ 'base00', 'base01', 'base02' }) do shade[tonumber(c[k]:sub(2), 16)] = k end local normal = vim.api.nvim_get_hl(0, { name = 'Normal', link = false }).bg local bad, accents = {}, 0 for name, d in pairs(vim.api.nvim_get_hl(0, {})) do if d.bg and not d.link then if t.is_accent(name) then accents = accents + 1 elseif shade[d.bg] and d.bg ~= normal then bad[#bad + 1] = name .. '=' .. shade[d.bg] end end end for _, name in ipairs({ 'NormalFloat', 'FloatBorder', 'TelescopeBorder', 'Pmenu', 'StatusLine', 'SignColumn', 'LineNr' }) do if vim.api.nvim_get_hl(0, { name = name, link = false }).bg ~= normal then bad[#bad + 1] = name .. ' is not the editor background' end end table.sort(bad) io.stdout:write(('SOLID normal=%s accents=%d visual=%s bad=[%s]'):format(tostring(normal ~= nil and shade[normal]), accents, tostring(vim.api.nvim_get_hl(0, { name = 'Visual', link = false }).bg ~= normal), table.concat(bad, ' '))) vim.cmd('qa!') end, 300)" },
+    { text = true, cwd = root, env = { XDG_CACHE_HOME = vim.fn.tempname() } }):wait(40000)
+  local out = (r.stdout or '') .. (r.stderr or '')
+  return out:find('SOLID normal=base00', 1, true) ~= nil and out:find('visual=true bad=[]', 1, true) ~= nil, out:sub(1, 500)
+end)
+
 check.global('popups_have_borders', function()
   return vim.o.winborder ~= '' and vim.o.winborder ~= 'none', "winborder = '" .. vim.o.winborder .. "' (transparent popups need a border to be readable)"
 end)
