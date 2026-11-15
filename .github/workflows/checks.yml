@@ -70,10 +70,11 @@ jobs:
           { echo 'report<<END_OF_REPORT'; cat "$RUNNER_TEMP/report.txt"; echo 'END_OF_REPORT'; } >> "$GITHUB_OUTPUT"
           if [ "$failed" -ne 0 ] || [ "$untripped" -ne 0 ]; then
             # each failure also as an annotation: shown on the run's page without opening the log
-            grep -a -h -E '^(FAIL |NOT TRIPPED)' "$RUNNER_TEMP/checks.txt" "$RUNNER_TEMP/tripwires.txt" | cut -c1-900 \
-              | while IFS= read -r line; do echo "::error title=check failed::$line"; done
-            grep -a -q -E '^[0-9]+ passed' "$RUNNER_TEMP/checks.txt" \
-              || echo "::error title=checks did not finish::$(tail -5 "$RUNNER_TEMP/checks.txt" | tr '\n' ' ' | cut -c1-900)"
+            { grep -a -h -E '^(FAIL |NOT TRIPPED)' "$RUNNER_TEMP/checks.txt" "$RUNNER_TEMP/tripwires.txt" || true; } | cut -c1-900 > "$RUNNER_TEMP/failures.txt"
+            while IFS= read -r line; do echo "::error title=check failed::$line"; done < "$RUNNER_TEMP/failures.txt"
+            # nothing recognisable failed, yet the run did: show how it ended
+            [ -s "$RUNNER_TEMP/failures.txt" ] \
+              || echo "::error title=checks ended badly (exit $failed, tripwires $untripped)::$(tail -c 900 "$RUNNER_TEMP/checks.txt" | tr '\n' ' ')"
             echo "::group::Full output"; cat "$RUNNER_TEMP/checks.txt" "$RUNNER_TEMP/tripwires.txt"; echo "::endgroup::"
             exit 1
           fi

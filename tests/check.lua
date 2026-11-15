@@ -142,7 +142,12 @@ function check.lang(spec) table.insert(check.langs, spec) end
 
 local function report(status, name, msg)
   table.insert(check.results, status)
-  io.stdout:write(('%s %s%s\n'):format(status, name, msg and (': ' .. msg) or ''))
+  -- Messages the editor prints while a check runs do not end their line, so a
+  -- result could land behind one of them. Results that someone has to find
+  -- (and that tests/check.sh and the GitHub job search for with ^FAIL / ^SKIP)
+  -- always start a line of their own.
+  local fresh = status ~= 'PASS' and '\n' or ''
+  io.stdout:write(('%s%s %s%s\n'):format(fresh, status, name, msg and (': ' .. msg) or ''))
 end
 
 local function norm(lhs)
