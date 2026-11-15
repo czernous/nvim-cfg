@@ -24,7 +24,8 @@
 --   3. "The selected item" looks the same everywhere. Any group that marks a
 --      selection (its name ends in Sel, Selection or Selected: completion menu,
 --      picker, wildmenu, any plugin) gets the theme's own selection colour.
---   5. Calm code: names and punctuation are plain text, all keywords share one
+--   5. Calm code: every text colour is softened a little (M.opts.soften),
+--      names are plain text, punctuation is muted, all keywords share one
 --      colour, strings / functions / types / constants keep theirs, comments
 --      are muted but readable (3.5:1), the matching bracket is unmistakable.
 --      The same for every palette (see calm()).
@@ -35,7 +36,14 @@
 
 local M = {}
 
-M.opts = { transparent = true }
+--- Where this config's files are: ~/.config/nvim, or the folder named by
+--- $NVIM_CONFIG_ROOT (see lazy.lua).
+local function config_root()
+  local root = vim.env.NVIM_CONFIG_ROOT
+  return (root and root ~= '') and root or vim.fn.stdpath('config')
+end
+
+M.opts = { transparent = true, soften = 0.2 }
 
 --- The built-in palettes, one per terminal polarity: files in palettes/
 --- (official base16 schemes). Used when nothing outside supplies a palette.
@@ -89,29 +97,6 @@ function M.load_file(path)
     palette.variant = (0.299 * r + 0.587 * g + 0.114 * b) > 128 and 'light' or 'dark'
   end
   return palette
-end
-
-local function palette_theme(palette)
-  local colors = {}
-  for i = 0, 15 do
-    local key = ('base%02X'):format(i)
-    colors[key] = palette[key]
-  end
-  return {
-    name = 'base16-' .. palette.name,
-    variant = palette.variant,
-    palette = palette,
-    load = function()
-      -- Colours for the plugins this config has, not for the ~30 others the
-      -- renderer knows (166 fewer groups to replay on every start). Taken from
-      -- the plugin specs, so adding a plugin needs nothing here.
-      local plugins = { default = false, ['williamboman/mason.nvim'] = true } -- mason's former address
-      for _, plugin in pairs(require('lazy.core.config').plugins) do
-        if plugin[1] then plugins[plugin[1]] = true end
-      end
-      require('mini.base16').setup({ palette = colors, use_cterm = false, plugins = plugins })
-    end,
-  }
 end
 
 --------------------------------------------------------------------------------
@@ -191,25 +176,28 @@ end
 --- The muted colour for comments: the palette's own dim colours if one of them
 --- can be read against the background (3.5:1), otherwise the text colour
 --- faded towards the background just far enough to be.
-local function muted(palette)
+local function muted(palette) -- (aims a little above 3.5: colours are whole numbers)
   for _, key in ipairs({ 'base03', 'base04' }) do
-    if contrast(palette[key], palette.base00) >= 3.5 then return palette[key] end
+    if contrast(palette[key], palette.base00) >= 3.6 then return palette[key] end
   end
   for share = 0.35, 1, 0.05 do
     local colour = mix(palette.base05, palette.base00, share)
-    if contrast(colour, palette.base00) >= 3.5 then return colour end
+    if contrast(colour, palette.base00) >= 3.6 then return colour end
   end
   return palette.base05
 end
 
 -- Rule 5 (see the top of the file): calm code. A plain base16 renderer gives
 -- every kind of name its own accent (fields red, brackets pink, loops yellow...),
--- which is far busier than the themes these palettes come from. Here:
-local plain = { -- names and punctuation: the text colour
-  'Identifier', 'Delimiter', 'Operator', '@variable', '@variable.member', '@variable.parameter', '@property',
-  '@punctuation', '@punctuation.bracket', '@punctuation.delimiter', '@lsp.type.variable', '@lsp.type.property',
-  '@lsp.type.parameter',
+-- which is far busier than the themes these palettes come from (Catppuccin,
+-- One Dark, Rosé Pine all keep names plain and punctuation muted). Here:
+local plain = { -- names and operators: the text colour
+  'Identifier', 'Operator', '@variable', '@variable.member', '@variable.parameter', '@property',
+  '@lsp.type.variable', '@lsp.type.property', '@lsp.type.parameter',
 }
+-- brackets, commas, dots: muted like comments, so the code's words lead and the
+-- one matching bracket (MatchParen) is the only bracket that stands out
+local punctuation = { 'Delimiter', '@punctuation', '@punctuation.bracket', '@punctuation.delimiter' }
 local keywords = { -- every kind of keyword: the one keyword colour
   'Statement', 'Keyword', 'Conditional', 'Repeat', 'Label', 'Exception', 'Include', 'Define', 'PreProc', 'PreCondit',
   'StorageClass', 'Structure', '@keyword.return',
@@ -228,12 +216,13 @@ local function calm(palette)
   recolour({ 'Macro' }, palette.base0D)     -- macros read as the functions they are used like
   recolour({ 'Character' }, palette.base0B) -- a character is a short string
   recolour({ 'Comment' }, muted(palette))
+  recolour(punctuation, muted(palette))
   -- the bracket matching the one under the cursor: unmistakable
   vim.api.nvim_set_hl(0, 'MatchParen', { fg = number(palette.base09), bg = number(palette.base02), bold = true })
 end
 
 local function style()
-  if M.current and M.current.palette then calm(M.current.palette) end
+  if M.current and M.current.colors then calm(M.current.colors) end
   -- which colours does this theme use for its surfaces?
   local shades = {}
   for _, name in ipairs(surfaces) do
@@ -260,7 +249,7 @@ end
 -- thrown away whenever plugins are updated. Bump CACHE_VERSION when the rules
 -- above change. The key is compared as plain text (hashing it cost 3.9 ms).
 --------------------------------------------------------------------------------
-local CACHE_VERSION = 9
+local CACHE_VERSION = 10
 local cache_dir = vim.fn.stdpath('cache') .. '/czernous-theme'
 
 local function cache_key(theme)
@@ -270,12 +259,13 @@ local function cache_key(theme)
   -- when the lockfile last changed).
   local runtime = vim.env.VIMRUNTIME or ''
   local runtime_stat = vim.uv.fs_stat(runtime)
-  local lock_stat = vim.uv.fs_stat(vim.fn.stdpath('config') .. '/lazy-lock.json')
+  local lock_stat = vim.uv.fs_stat(config_root() .. '/lazy-lock.json')
   local parts = { tostring(CACHE_VERSION), theme.name, tostring(M.opts.transparent), runtime,
     tostring(runtime_stat and runtime_stat.mtime.sec or 0), vim.env.NVIM_PLUGIN_ROOT or '',
     tostring(lock_stat and lock_stat.mtime.sec or 0) }
   if theme.palette then
     for i = 0, 15 do parts[#parts + 1] = theme.palette[('base%02X'):format(i)] end
+    parts[#parts + 1] = tostring(theme.soften)
   end
   return table.concat(parts, '|')
 end
@@ -376,6 +366,51 @@ local function chosen()
   return ok and type(choice) == 'table' and choice or {}
 end
 
+--- How much every text colour is faded towards the background (0 = the
+--- palette as it is, 0.3 = much softer). Lowers contrast without changing a
+--- single hue; applies to whatever palette is in use, as far as its text stays
+--- comfortably readable (TEXT_FLOOR). <leader>ts steps through the levels and
+--- the choice is remembered.
+M.soften_levels = { 0, 0.1, 0.2, 0.3 }
+local function soften_level()
+  local level = chosen().soften
+  return type(level) == 'number' and level or M.opts.soften
+end
+
+--- Softening never takes ordinary text below this contrast with the background
+--- (a palette that is already soft is softened less, or not at all).
+local TEXT_FLOOR = 6
+
+local function palette_theme(palette)
+  local soften = soften_level()
+  while soften > 0 and contrast(mix(palette.base05, palette.base00, 1 - soften), palette.base00) < TEXT_FLOOR do
+    soften = math.max(0, soften - 0.02)
+  end
+  local colors = {}
+  for i = 0, 15 do
+    local key = ('base%02X'):format(i)
+    -- base00-04 are the background shades; 05-0F are what text is written in
+    colors[key] = (i >= 5 and soften > 0) and mix(palette[key], palette.base00, 1 - soften) or palette[key]
+  end
+  return {
+    name = 'base16-' .. palette.name,
+    variant = palette.variant,
+    palette = palette, -- as supplied
+    colors = colors,   -- as used (softened)
+    soften = soften,
+    load = function()
+      -- Colours for the plugins this config has, not for the ~30 others the
+      -- renderer knows (fewer groups to replay on every start). Taken from the
+      -- plugin specs, so adding or removing a plugin needs nothing here.
+      local plugins = { default = false, ['williamboman/mason.nvim'] = true } -- mason's former address
+      for _, plugin in pairs(require('lazy.core.config').plugins) do
+        if plugin[1] then plugins[plugin[1]] = true end
+      end
+      require('mini.base16').setup({ palette = colors, use_cterm = false, plugins = plugins })
+    end,
+  }
+end
+
 --- Theme for the current terminal polarity (or the palette supplied from outside).
 local function pick()
   local path, who = palette_source()
@@ -390,9 +425,9 @@ local function pick()
   end
   local variant = vim.o.background == 'light' and 'light' or 'dark'
   local name = chosen()[variant] or M.themes[variant]
-  local builtin = ('%s/palettes/%s.json'):format(vim.fn.stdpath('config'), name)
+  local builtin = ('%s/palettes/%s.json'):format(config_root(), name)
   if not vim.uv.fs_stat(builtin) then -- a remembered palette that is gone
-    builtin = ('%s/palettes/%s.json'):format(vim.fn.stdpath('config'), M.themes[variant])
+    builtin = ('%s/palettes/%s.json'):format(config_root(), M.themes[variant])
   end
   M.source = 'built-in palette: ' .. builtin
   local palette, err = M.load_file(builtin)
@@ -454,7 +489,7 @@ function M.next_palette(step)
   end
   local variant = vim.o.background == 'light' and 'light' or 'dark'
   local names = {}
-  for _, file in ipairs(vim.fn.globpath(vim.fn.stdpath('config') .. '/palettes', '*.json', false, true)) do
+  for _, file in ipairs(vim.fn.globpath(config_root() .. '/palettes', '*.json', false, true)) do
     local palette = M.load_file(file)
     if palette and palette.variant == variant then names[#names + 1] = vim.fn.fnamemodify(file, ':t:r') end
   end
@@ -472,6 +507,22 @@ function M.next_palette(step)
   apply(pick())
   vim.notify(('Palette: %s (%d of %d)'):format(names[at], at, #names))
   return true
+end
+
+--- Step to the next softness level (see M.soften_levels) and remember it.
+function M.next_soften()
+  local current, at = soften_level(), 1
+  for i, level in ipairs(M.soften_levels) do
+    if math.abs(level - current) < 0.001 then at = i end
+  end
+  local level = M.soften_levels[at % #M.soften_levels + 1]
+  local choice = chosen()
+  choice.soften = level
+  vim.fn.mkdir(vim.fn.fnamemodify(choice_file, ':h'), 'p')
+  vim.fn.writefile({ vim.json.encode(choice) }, choice_file)
+  apply(pick())
+  vim.notify(('Colours softened by %d%%'):format(level * 100 + 0.5))
+  return level
 end
 
 function M.use(variant)

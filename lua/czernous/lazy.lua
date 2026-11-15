@@ -3,6 +3,13 @@
 -- store path) by setting $NVIM_PLUGIN_ROOT: then nothing is installed or
 -- written there.
 local external = vim.env.NVIM_PLUGIN_ROOT
+-- The config itself normally is ~/.config/nvim. It may instead live anywhere
+-- (the Nix package carries its own copy) and say where with $NVIM_CONFIG_ROOT:
+-- that folder is then kept on the runtime path, so its Lua modules and its
+-- language-server settings (after/lsp) are found. (lazy.nvim rebuilds the
+-- runtime path from Neovim's standard folders; `rtp.paths` adds to it.)
+local config_root = vim.env.NVIM_CONFIG_ROOT
+if config_root == '' then config_root = nil end
 local plugin_root = external or (vim.fn.stdpath('data') .. '/lazy')
 local lazypath = plugin_root .. '/lazy.nvim'
 if not external and not vim.uv.fs_stat(lazypath) then
@@ -28,6 +35,7 @@ require('lazy').setup('czernous.plugins', {
   change_detection = { notify = false },
   performance = {
     rtp = {
+      paths = config_root and { config_root, config_root .. '/after' } or {},
       -- Built-in plugins this config never uses at startup. (osc52 stays on: it
       -- lets <leader>y copy through the terminal itself when no clipboard tool is
       -- installed. matchit is loaded with the first file: see init.lua.)

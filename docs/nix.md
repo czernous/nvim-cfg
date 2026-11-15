@@ -8,36 +8,75 @@ contract the flake relies on:
 |---|---|
 | `runs_from_supplied_plugin_folder` | the config starts and highlights a file with plugins handed over in a read-only folder shaped like the Nix store one (`$NVIM_PLUGIN_ROOT`), installing and writing nothing |
 | `nix_plugin_sources_match_specs` | `nix/plugin-sources.json` names every plugin in `lazy-lock.json`, with the address the plugin specs use |
+| `runs_from_another_config_folder` | the config runs from a folder that is not `~/.config/nvim` (`$NVIM_CONFIG_ROOT`), started the way the Nix wrapper starts it: modules, language-server settings and palettes are all found |
 | `stylix_palette_picked_up` | Stylix's palette file is followed without any setting |
+
+## Using it
+
+The package is self-contained: Neovim, this config, the plugins and the basic
+tools. No home-manager and no clone in `~/.config` are needed.
+
+```sh
+nix run github:czernous/nvim-cfg                 # try it
+nix profile install github:czernous/nvim-cfg     # install for your user
+```
+
+NixOS, without home-manager (with the flake as input `nvim-cfg`):
+
+```nix
+environment.systemPackages = [ inputs.nvim-cfg.packages.${pkgs.system}.default ];
+```
+
+With home-manager: `imports = [ inputs.nvim-cfg.homeManagerModules.default ];`
+and `programs.czernous-nvim.enable = true;` (it installs the same package and
+sets `EDITOR`).
+
+The self-contained package keeps its data (history, compiled parsers, the
+palette you picked) under the name `czernous-nvim` (`~/.local/share/czernous-nvim`
+...), apart from a plain `~/.config/nvim` setup on the same machine.
 
 ## First run on a Nix machine
 
 ```sh
 nix flake check                 # evaluates everything
-nix build .#neovim              # Neovim + basic tools; plugins by lazy.nvim
-nix build .#neovim-pinned       # plugins from the store (lazy-lock.json commits)
+nix build .#neovim              # the self-contained package
 nix develop .#go                # a devshell; also rust, java, dotnet, web, lua, python
+nix run .#update-plugins        # in a clone: move lazy-lock.json to the newest commits
 ```
 
 Things most likely to need a fix on first evaluation:
 
-- `nix/plugins.nix` fetches with `builtins.fetchGit` by commit and branch. A
-  lockfile commit that is a release tag not on the branch tip history would fail
-  to fetch; the error names the plugin.
+- `nix/plugins.nix` fetches each plugin with `builtins.fetchGit` by commit. If a
+  fetch fails the error names the plugin.
 - package names in `nix/devshells.nix` are nixpkgs' current ones as far as known
   (`delve`, `lldb`, `jdt-language-server`, `csharp-ls`, `netcoredbg`, `vtsls`...).
+- `nix/package.nix` passes `--cmd 'set rtp^=<config>' -u <config>/init.lua` to
+  Neovim through the wrapper; the same command line is what the check
+  `runs_from_another_config_folder` runs here.
 
-## Two ways to run
+## Who manages the plugins
 
-| | default | pinned |
+| | default (self-contained) | `neovim-lazy` / `selfContained = false` |
 |---|---|---|
 | Neovim, language servers, formatters, debuggers | prebuilt by Nix | prebuilt by Nix |
-| Plugins | lazy.nvim installs them; `:Lazy update` updates and rewrites `lazy-lock.json` | Nix store, the `lazy-lock.json` commits; no network at run time |
-| Config | your clone at `~/.config/nvim` | your clone, or `linkConfig = true` (read-only link to the flake) |
-| Updating plugins | `:Lazy update`, commit `lazy-lock.json` | update on a default machine, commit, rebuild |
+| Config | from the Nix store | your clone at `~/.config/nvim` |
+| Plugins | Nix: the store, at the `lazy-lock.json` commits; no network at run time | lazy.nvim installs and updates them |
+| Updating plugins | `nix run .#update-plugins`, then rebuild | `:Lazy update` |
+| lazy.nvim's job | loading each plugin on first use, nothing else | managing and loading |
 
-lazy.nvim stays in both: on a pinned machine it installs nothing and only loads
-each plugin on first use, which is what keeps the start fast.
+`update-plugins` is `:Lazy update` for the Nix-managed mode: it asks each
+plugin's repository for its newest commit (or newest release, for the plugins
+that follow releases), rewrites `lazy-lock.json` in the layout lazy.nvim itself
+writes, and prints what moved (`^ which-key.nvim 0000000 -> 3aab214 (main)`).
+`--check` only shows. It also runs without Nix: `nvim -l nix/update-plugins.lua`.
+Tested on this machine against the real repositories (a branch plugin and a
+release plugin); the rewritten file was byte-identical to lazy.nvim's.
+
+Every plugin the config uses is fetched this way, so none is left for lazy.nvim
+to install. No plugin here has a compiled part (completion uses its Lua matcher
+by choice); syntax parsers are compiled on first use by the `gcc` and
+`tree-sitter` the package puts on `$PATH`. Prebuilt parsers from nixpkgs are a
+possible later step.
 
 ## Colours (Stylix)
 
@@ -62,5 +101,5 @@ measurements were using the machine). No difference beyond run-to-run noise in
 the two clean rounds.
 
 Still to measure on a Nix machine (same command, same table in
-`docs/perf/results.md`): `nix build .#neovim` and `.#neovim-pinned` against a
+`docs/perf/results.md`): `nix build .#neovim` and `.#neovim-lazy` against a
 plain install of the same Neovim version.

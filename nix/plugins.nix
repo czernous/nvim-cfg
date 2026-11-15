@@ -6,7 +6,8 @@
 # lazy-lock.json is the single source of truth for versions, on Nix and off it.
 # It records commits but not where each plugin lives; that is
 # plugin-sources.json (a check in tests/check.lua keeps it equal to the plugin
-# specs, so it cannot drift).
+# specs, so it cannot drift). `nix run .#update-plugins` moves the lockfile to
+# the newest commits: the counterpart of `:Lazy update`.
 #
 # Each plugin must be a real folder here, not a link: lazy.nvim only counts real
 # folders as installed (a check in tests/check.lua runs the config from such a
@@ -18,9 +19,10 @@ let
   fetch =
     name: locked:
     builtins.fetchGit {
-      url = sources.${name};
+      url = sources.${name}.url;
       rev = locked.commit;
-      ref = "refs/heads/${locked.branch}";
+      # a release commit is not always on the branch: look among all refs
+      allRefs = true;
     };
 in
 runCommand "czernous-nvim-plugins" { } (

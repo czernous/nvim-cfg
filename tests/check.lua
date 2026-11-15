@@ -679,22 +679,22 @@ check.global('stylix_palette_picked_up', function()
   vim.fn.writefile({ vim.json.encode(other) }, explicit)
   local function child(palette_env)
     local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
-      "autocmd VimEnter * ++once lua local t = require('czernous.theme') local c = t.current io.stdout:write(('THEME=%s base08=%s bg=%s fg=%06x source=%s'):format(tostring(c.name), tostring(c.palette and c.palette.base08), vim.o.background, vim.api.nvim_get_hl(0, { name = 'Normal' }).fg or 0, tostring(t.source))) vim.cmd('qa!')" },
+      "autocmd VimEnter * ++once lua local t = require('czernous.theme') local c = t.current io.stdout:write(('THEME=%s base08=%s bg=%s fg=%s source=%s'):format(tostring(c.name), tostring(c.palette and c.palette.base08), vim.o.background, tostring(c.colors and ('#%06x'):format(vim.api.nvim_get_hl(0, { name = 'Normal' }).fg or 0) == c.colors.base05 and c.palette.base05), tostring(t.source))) vim.cmd('qa!')" },
       { text = true, cwd = root, env = { XDG_CONFIG_HOME = home, XDG_CACHE_HOME = home .. '/cache', NVIM_BASE16_PALETTE = palette_env } }):wait(30000)
     return (r.stdout or '') .. (r.stderr or '')
   end
   local from_stylix, from_env = child(''), child(explicit)
-  local good = from_stylix:find('THEME=base16-stylix base08=#123456 bg=light fg=383a42', 1, true) and from_stylix:find('stylix/palette.json', 1, true)
+  local good = from_stylix:find('THEME=base16-stylix base08=#123456 bg=light fg=#383a42', 1, true) and from_stylix:find('stylix/palette.json', 1, true)
     and from_env:find('THEME=base16-explicit', 1, true)
   return good and true or false, ('with the Stylix file: %s || with $NVIM_BASE16_PALETTE too: %s'):format(from_stylix:sub(1, 160), from_env:sub(1, 80))
 end)
 
 -- Calm code colours, whatever the palette (the look of Catppuccin / One Dark /
 -- Rosé Pine themselves, which a plain base16 renderer does not give):
---   names and punctuation are plain text; every keyword has the one keyword
---   colour; the matching bracket stands out; comments are muted but readable.
+--   names are plain text and punctuation is muted; every keyword has the one
+--   keyword colour; the matching bracket stands out; comments are muted but readable.
 check.global('code_colours_are_calm', function()
-  local probe = "autocmd VimEnter * ++once lua local t = require('czernous.theme') local p = t.current.palette local function hl(n) return vim.api.nvim_get_hl(0, { name = n, link = false }) end local function hex(n) return n and ('#%06x'):format(n) or 'none' end local function is(n, base) return hex(hl(n).fg) == p[base] and 'ok' or (n .. '=' .. hex(hl(n).fg)) end local m = hl('MatchParen') io.stdout:write(('CALM names=%s,%s,%s,%s keywords=%s,%s,%s,%s,%s match=%s/%s/%s comment=%s base00=%s'):format(is('Identifier', 'base05'), is('@property', 'base05'), is('Delimiter', 'base05'), is('@variable', 'base05'), is('Statement', 'base0E'), is('Repeat', 'base0E'), is('Include', 'base0E'), is('@keyword.return', 'base0E'), is('Keyword', 'base0E'), hex(m.fg), hex(m.bg), tostring(m.bold), hex(hl('Comment').fg), p.base00)) vim.cmd('qa!')"
+  local probe = "autocmd VimEnter * ++once lua local t = require('czernous.theme') local p = t.current.colors local function hl(n) return vim.api.nvim_get_hl(0, { name = n, link = false }) end local function hex(n) return n and ('#%06x'):format(n) or 'none' end local function is(n, base) return hex(hl(n).fg) == p[base] and 'ok' or (n .. '=' .. hex(hl(n).fg)) end local m = hl('MatchParen') io.stdout:write(('CALM names=%s,%s,%s,%s keywords=%s,%s,%s,%s,%s match=%s/%s/%s comment=%s base00=%s'):format(is('Identifier', 'base05'), is('@property', 'base05'), (hl('Delimiter').fg == hl('Comment').fg and hl('@punctuation.bracket').fg == hl('Comment').fg) and 'ok' or 'punctuation-not-muted', is('@variable', 'base05'), is('Statement', 'base0E'), is('Repeat', 'base0E'), is('Include', 'base0E'), is('@keyword.return', 'base0E'), is('Keyword', 'base0E'), hex(m.fg), hex(m.bg), tostring(m.bold), hex(hl('Comment').fg), p.base00)) vim.cmd('qa!')"
   local function luminance(colour)
     local n = tonumber(colour:sub(2), 16)
     local function channel(v) v = v / 255; return v <= 0.03928 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4 end
@@ -715,7 +715,7 @@ check.global('code_colours_are_calm', function()
       bad[#bad + 1] = name .. ': no answer ' .. out:sub(1, 80)
     else
       checked = checked + 1
-      if names ~= 'ok,ok,ok,ok' then bad[#bad + 1] = name .. ': names/punctuation not plain (' .. names .. ')' end
+      if names ~= 'ok,ok,ok,ok' then bad[#bad + 1] = name .. ': names not plain / punctuation not muted (' .. names .. ')' end
       if keywords ~= 'ok,ok,ok,ok,ok' then bad[#bad + 1] = name .. ': keywords not one colour (' .. keywords .. ')' end
       if fg == 'none' or bg == 'none' or bold ~= 'true' then bad[#bad + 1] = ('%s: matching bracket not marked (fg %s bg %s bold %s)'):format(name, fg, bg, bold) end
       local ratio = comment ~= 'none' and contrast(comment, base00) or 0
@@ -766,6 +766,34 @@ check.global('theme_follows_installed_plugins', function()
   local groups = tonumber(out:match('GROUPS=(%d+)')) or 0
   local good = out:find('OURS=true,true,true OTHERS=false,false,false', 1, true) and #named == 0 and groups < 700
   return good and true or false, ('%s; plugins named in theme.lua: [%s]'):format(out:sub(1, 120), table.concat(named, ', '))
+end)
+
+-- Contrast is lowered by fading every text colour towards the background by a
+-- set share (default 20%), for any palette; <leader>ts steps the level and it
+-- is remembered. At level 0 the palette is used exactly as supplied.
+check.global('colours_can_be_softened', function()
+  local keys = {}
+  for _, k in ipairs(require('czernous.keymaps').all()) do keys[k.lhs] = true end
+  if not keys['<leader>ts'] then return false, '<leader>ts missing' end
+  local state = vim.fn.tempname()
+  local function child(lua)
+    local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+      "autocmd VimEnter * ++once lua local t = require('czernous.theme') " .. lua .. " local c = t.current io.stdout:write(('SOFT=%s text=%s raw=%s normal=#%06x'):format(tostring(c.soften), c.colors.base05, c.palette.base05, vim.api.nvim_get_hl(0, { name = 'Normal' }).fg)) vim.cmd('qa!')" },
+      { text = true, cwd = root, env = { XDG_STATE_HOME = state, XDG_CACHE_HOME = state .. '/cache' } }):wait(30000)
+    local out = (r.stdout or '') .. (r.stderr or '')
+    local soft, text, raw, normal = out:match('SOFT=(%S+) text=(%S+) raw=(%S+) normal=(#%x%x%x%x%x%x)')
+    return { soft = tonumber(soft), text = text, raw = raw, normal = normal, out = out }
+  end
+  local default = child('')
+  local stepped = child('t.next_soften()')           -- 0.2 -> 0.3
+  local remembered = child('')
+  local off = child('t.next_soften()')               -- 0.3 -> 0 (wraps)
+  if not (default.soft and stepped.soft and remembered.soft and off.soft) then return false, 'no answer: ' .. default.out:sub(1, 200) end
+  local good = default.soft == 0.2 and default.text ~= default.raw and default.normal == default.text
+    and stepped.soft == 0.3 and remembered.soft == 0.3 and remembered.normal == remembered.text and remembered.text ~= default.text
+    and off.soft == 0 and off.text == off.raw and off.normal == off.raw
+  return good, ('default %s (text %s, palette %s, Normal %s) -> stepped %s -> remembered %s (text %s, Normal %s) -> off %s (text %s, Normal %s)')
+    :format(tostring(default.soft), default.text, default.raw, default.normal, tostring(stepped.soft), tostring(remembered.soft), remembered.text, remembered.normal, tostring(off.soft), off.text, off.normal)
 end)
 
 check.global('special_buffers_are_quiet', function()
@@ -2273,8 +2301,11 @@ check.global('nix_plugin_sources_match_specs', function()
   for name in pairs(lock) do
     if not sources[name] then
       bad[#bad + 1] = name .. ' (in lazy-lock.json) has no source'
-    elseif specs[name] and specs[name].url ~= sources[name] then
-      bad[#bad + 1] = ('%s: %s, but the spec says %s'):format(name, sources[name], tostring(specs[name].url))
+    elseif specs[name] and specs[name].url ~= sources[name].url then
+      bad[#bad + 1] = ('%s: %s, but the spec says %s'):format(name, tostring(sources[name].url), tostring(specs[name].url))
+    elseif specs[name] and (sources[name].follow == 'tags') ~= (specs[name].version ~= nil) then
+      -- the updater must follow releases exactly where lazy.nvim does
+      bad[#bad + 1] = ('%s: follows %s, but the spec %s a version'):format(name, tostring(sources[name].follow), specs[name].version and 'sets' or 'does not set')
     end
   end
   for name in pairs(sources) do
@@ -2311,6 +2342,25 @@ check.global('runs_from_supplied_plugin_folder', function()
   local good = out:find('ROOT=' .. farm, 1, true) and out:find('HL=true', 1, true) and out:find('ERR=[]', 1, true)
     and tonumber(out:match('PLUGINS=(%d+)')) >= 20 and untouched
   return good and true or false, out:sub(1, 300) .. (untouched and '' or ' (lazy-lock.json was rewritten)')
+end)
+
+-- The config also runs from a folder that is not ~/.config/nvim, named by
+-- $NVIM_CONFIG_ROOT (how the Nix package carries it, so that it works without
+-- home-manager and without a clone): its Lua modules, its language-server
+-- settings (after/lsp) and its palettes are all found there, wherever Neovim
+-- is started from.
+check.global('runs_from_another_config_folder', function()
+  local home, elsewhere = vim.fn.tempname(), vim.fn.tempname()
+  vim.fn.mkdir(home, 'p'); vim.fn.mkdir(elsewhere, 'p')
+  local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd', 'set rtp^=' .. root, '-u', root .. '/init.lua', '--cmd',
+    "autocmd VimEnter * ++once lua vim.defer_fn(function() local t = require('czernous.theme') local settings = vim.api.nvim_get_runtime_file('after/lsp/gopls.lua', true) io.stdout:write(('THEME=%s SOURCE=%s CONFIGDIR_EXISTS=%s LSP=%s SETTINGS=%s START=%s ERR=[%s]'):format(tostring(t.current and t.current.name), tostring(t.source), tostring(vim.uv.fs_stat(vim.fn.stdpath('config')) ~= nil), tostring(package.loaded['czernous.lsp'] ~= nil), tostring(settings[1]), tostring(vim.b.czernous_start == true), vim.v.errmsg)) vim.cmd('qa!') end, 500)" },
+    { text = true, cwd = elsewhere, env = { NVIM_CONFIG_ROOT = root, NVIM_APPNAME = 'czernous-check-' .. vim.uv.hrtime(),
+      NVIM_PLUGIN_ROOT = vim.fn.stdpath('data') .. '/lazy', XDG_STATE_HOME = home .. '/state', XDG_CACHE_HOME = home .. '/cache', XDG_DATA_HOME = home .. '/data' } }):wait(40000)
+  local out = (r.stdout or '') .. (r.stderr or '')
+  local good = out:find('THEME=base16-catppuccin-mocha', 1, true) and out:find('SOURCE=built-in palette: ' .. root .. '/palettes/', 1, true)
+    and out:find('CONFIGDIR_EXISTS=false', 1, true) and out:find('LSP=true', 1, true)
+    and out:find('SETTINGS=' .. root .. '/after/lsp/gopls.lua', 1, true) and out:find('START=true', 1, true) and out:find('ERR=[]', 1, true)
+  return good and true or false, out:sub(1, 400)
 end)
 
 local function cursor_on_call(buf)
