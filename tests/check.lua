@@ -661,6 +661,34 @@ check.global('external_palette_used', function()
   return out:find('PALETTE=base16%-external%-test #123456') ~= nil, out:sub(1, 200)
 end)
 
+-- On a machine themed by Stylix (NixOS / home-manager) the palette file Stylix
+-- writes is picked up by itself: ~/.config/stylix/palette.json, colours without
+-- '#', no dark/light field. An explicit $NVIM_BASE16_PALETTE still wins.
+check.global('stylix_palette_picked_up', function()
+  local home = vim.fn.tempname()
+  vim.fn.mkdir(home .. '/stylix', 'p')
+  vim.uv.fs_symlink(root, home .. '/nvim')
+  local stylix = { author = 'Stylix', scheme = 'Stylix', slug = 'stylix' }
+  for i, colour in ipairs({ 'fafafa', 'f0f0f1', 'e5e5e6', 'a0a1a7', '696c77', '383a42', '202227', '090a0b',
+    '123456', 'd75f00', 'c18401', '50a14f', '0184bc', '4078f2', 'a626a4', '986801' }) do
+    stylix[('base%02X'):format(i - 1)] = colour
+  end
+  vim.fn.writefile({ vim.json.encode(stylix) }, home .. '/stylix/palette.json')
+  local other = assert(require('czernous.theme').load_file(root .. '/palettes/onedark.json')); other.name = 'explicit'
+  local explicit = vim.fn.tempname() .. '.json'
+  vim.fn.writefile({ vim.json.encode(other) }, explicit)
+  local function child(palette_env)
+    local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+      "autocmd VimEnter * ++once lua local t = require('czernous.theme') local c = t.current io.stdout:write(('THEME=%s base08=%s bg=%s fg=%06x source=%s'):format(tostring(c.name), tostring(c.palette and c.palette.base08), vim.o.background, vim.api.nvim_get_hl(0, { name = 'Normal' }).fg or 0, tostring(t.source))) vim.cmd('qa!')" },
+      { text = true, cwd = root, env = { XDG_CONFIG_HOME = home, XDG_CACHE_HOME = home .. '/cache', NVIM_BASE16_PALETTE = palette_env } }):wait(30000)
+    return (r.stdout or '') .. (r.stderr or '')
+  end
+  local from_stylix, from_env = child(''), child(explicit)
+  local good = from_stylix:find('THEME=base16-stylix base08=#123456 bg=light fg=383a42', 1, true) and from_stylix:find('stylix/palette.json', 1, true)
+    and from_env:find('THEME=base16-explicit', 1, true)
+  return good and true or false, ('with the Stylix file: %s || with $NVIM_BASE16_PALETTE too: %s'):format(from_stylix:sub(1, 160), from_env:sub(1, 80))
+end)
+
 check.global('special_buffers_are_quiet', function()
   local before = #check.errors
   for _, cmd in ipairs({ 'help help', 'Oil', 'terminal', 'enew' }) do

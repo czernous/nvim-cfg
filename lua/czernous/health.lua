@@ -78,6 +78,11 @@ function M.check()
     end
   end
 
+  health.start('czernous: colours')
+  local theme = require('czernous.theme')
+  health.info(('%s (%s)'):format(theme.current and theme.current.name or 'none', theme.source or 'not set up'))
+  health.info('A machine themed by Stylix is followed by itself (stylix/palette.json); $NVIM_BASE16_PALETTE names any other base16 palette file.')
+
   health.start('czernous: clipboard')
   if vim.fn.has('clipboard') == 1 then
     health.ok('a clipboard tool was found: <leader>y copies to the system clipboard')

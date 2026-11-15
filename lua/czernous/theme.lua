@@ -2,9 +2,10 @@
 --
 -- WHAT supplies the colours:
 --   * by default a hand-tuned colour scheme, one per polarity (M.themes);
---   * or, if the environment provides one, a 16-colour base16 PALETTE file
---     ($NVIM_BASE16_PALETTE = path to JSON like palettes/*.json). That is how
---     Stylix themes Neovim on Nix; any other Neovim config can read the same file.
+--   * or, if the environment provides one, a 16-colour base16 PALETTE file:
+--     the one Stylix writes on a machine it themes (found by itself, see
+--     palette_source), or any JSON like palettes/*.json named by
+--     $NVIM_BASE16_PALETTE. Plain data: any other Neovim config can read the same file.
 --
 -- Whatever supplies them, the same rules give the UI one consistent structure:
 --   1. Polarity follows the terminal. Neovim detects a dark or light terminal
@@ -81,9 +82,15 @@ function M.load_file(path)
   if not ok or type(palette) ~= 'table' then return nil, path .. ' is not valid JSON' end
   for i = 0, 15 do
     local key = ('base%02X'):format(i)
-    if type(palette[key]) ~= 'string' then return nil, path .. ' has no ' .. key end
+    local colour = palette[key]
+    if type(colour) ~= 'string' then return nil, path .. ' has no ' .. key end
+    -- Stylix writes colours without the leading '#'
+    if colour:match('^%x%x%x%x%x%x$') then colour = '#' .. colour end
+    if not colour:match('^#%x%x%x%x%x%x$') then return nil, ('%s: %s is not a colour (%s)'):format(path, key, colour) end
+    palette[key] = colour:lower()
   end
-  palette.name = palette.name or vim.fn.fnamemodify(path, ':t:r')
+  -- its name: ours, or the one Stylix / base16 scheme files give (slug)
+  palette.name = palette.name or palette.slug or vim.fn.fnamemodify(path, ':t:r')
   if palette.variant ~= 'dark' and palette.variant ~= 'light' then
     -- not stated: a palette whose background (base00) is bright is a light one
     local n = tonumber(palette.base00:sub(2), 16) or 0
@@ -267,14 +274,36 @@ local function apply(theme)
   return true
 end
 
+--- The palette file supplied from outside, if any, and who supplies it:
+---   1. $NVIM_BASE16_PALETTE (a path) -- explicit, for any setup;
+---   2. the file Stylix writes on a machine it themes: stylix/palette.json in
+---      the user's config folder (home-manager) or in /etc (NixOS).
+--- So with Stylix nothing has to be configured: Neovim follows the system palette.
+local function palette_source()
+  local explicit = vim.env.NVIM_BASE16_PALETTE
+  if explicit and explicit ~= '' then return explicit, '$NVIM_BASE16_PALETTE' end
+  local config_home = vim.env.XDG_CONFIG_HOME
+  if not config_home or config_home == '' then config_home = (vim.env.HOME or '') .. '/.config' end
+  for _, path in ipairs({ config_home .. '/stylix/palette.json', '/etc/stylix/palette.json' }) do
+    if vim.uv.fs_stat(path) then return path, 'Stylix' end
+  end
+end
+
+--- Where the colours come from, for :checkhealth (set by pick()).
+M.source = nil
+
 --- Theme for the current terminal polarity (or the palette supplied from outside).
 local function pick()
-  local external = vim.env.NVIM_BASE16_PALETTE
-  if external and external ~= '' then
-    local palette, err = M.load_file(external)
-    if palette then return palette_theme(palette) end
-    vim.notify('NVIM_BASE16_PALETTE: ' .. err .. '; using the built-in theme', vim.log.levels.WARN)
+  local path, who = palette_source()
+  if path then
+    local palette, err = M.load_file(path)
+    if palette then
+      M.source = ('%s: %s'):format(who, path)
+      return palette_theme(palette)
+    end
+    vim.notify(('%s palette: %s; using the built-in theme'):format(who, err), vim.log.levels.WARN)
   end
+  M.source = 'built-in theme'
   local variant = vim.o.background == 'light' and 'light' or 'dark'
   local theme = M.themes[variant]
   theme.variant = variant
