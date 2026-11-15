@@ -24,6 +24,10 @@
 --   3. "The selected item" looks the same everywhere. Any group that marks a
 --      selection (its name ends in Sel, Selection or Selected: completion menu,
 --      picker, wildmenu, any plugin) gets the theme's own selection colour.
+--   5. Calm code: names and punctuation are plain text, all keywords share one
+--      colour, strings / functions / types / constants keep theirs, comments
+--      are muted but readable (3.5:1), the matching bracket is unmistakable.
+--      The same for every palette (see calm()).
 --   4. The result is cached, so a start costs ~0.6 ms instead of ~3 ms and the
 --      theme plugin is not even loaded.
 --
@@ -97,7 +101,16 @@ local function palette_theme(palette)
     name = 'base16-' .. palette.name,
     variant = palette.variant,
     palette = palette,
-    load = function() require('mini.base16').setup({ palette = colors, use_cterm = false }) end,
+    load = function()
+      -- Colours for the plugins this config has, not for the ~30 others the
+      -- renderer knows (166 fewer groups to replay on every start). Taken from
+      -- the plugin specs, so adding a plugin needs nothing here.
+      local plugins = { default = false, ['williamboman/mason.nvim'] = true } -- mason's former address
+      for _, plugin in pairs(require('lazy.core.config').plugins) do
+        if plugin[1] then plugins[plugin[1]] = true end
+      end
+      require('mini.base16').setup({ palette = colors, use_cterm = false, plugins = plugins })
+    end,
   }
 end
 
@@ -151,7 +164,76 @@ function M.restyle()
   end
 end
 
+-- WCAG contrast between two '#rrggbb' colours (1 = identical, 21 = black on white).
+local function luminance(colour)
+  local n = tonumber(colour:sub(2), 16)
+  local function channel(v)
+    v = v / 255
+    return v <= 0.03928 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4
+  end
+  return 0.2126 * channel(math.floor(n / 65536)) + 0.7152 * channel(math.floor(n / 256) % 256) + 0.0722 * channel(n % 256)
+end
+local function contrast(a, b)
+  local la, lb = luminance(a), luminance(b)
+  return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05)
+end
+
+--- `share` of colour a, the rest colour b.
+local function mix(a, b, share)
+  local x, y = tonumber(a:sub(2), 16), tonumber(b:sub(2), 16)
+  local function part(shift)
+    local u, v = math.floor(x / shift) % 256, math.floor(y / shift) % 256
+    return math.floor(u * share + v * (1 - share) + 0.5)
+  end
+  return ('#%02x%02x%02x'):format(part(65536), part(256), part(1))
+end
+
+--- The muted colour for comments: the palette's own dim colours if one of them
+--- can be read against the background (3.5:1), otherwise the text colour
+--- faded towards the background just far enough to be.
+local function muted(palette)
+  for _, key in ipairs({ 'base03', 'base04' }) do
+    if contrast(palette[key], palette.base00) >= 3.5 then return palette[key] end
+  end
+  for share = 0.35, 1, 0.05 do
+    local colour = mix(palette.base05, palette.base00, share)
+    if contrast(colour, palette.base00) >= 3.5 then return colour end
+  end
+  return palette.base05
+end
+
+-- Rule 5 (see the top of the file): calm code. A plain base16 renderer gives
+-- every kind of name its own accent (fields red, brackets pink, loops yellow...),
+-- which is far busier than the themes these palettes come from. Here:
+local plain = { -- names and punctuation: the text colour
+  'Identifier', 'Delimiter', 'Operator', '@variable', '@variable.member', '@variable.parameter', '@property',
+  '@punctuation', '@punctuation.bracket', '@punctuation.delimiter', '@lsp.type.variable', '@lsp.type.property',
+  '@lsp.type.parameter',
+}
+local keywords = { -- every kind of keyword: the one keyword colour
+  'Statement', 'Keyword', 'Conditional', 'Repeat', 'Label', 'Exception', 'Include', 'Define', 'PreProc', 'PreCondit',
+  'StorageClass', 'Structure', '@keyword.return',
+}
+local function calm(palette)
+  local function number(colour) return tonumber(colour:sub(2), 16) end
+  local function recolour(names, colour)
+    for _, name in ipairs(names) do
+      local def = vim.api.nvim_get_hl(0, { name = name, link = false })
+      def.fg = number(colour)
+      vim.api.nvim_set_hl(0, name, def)
+    end
+  end
+  recolour(plain, palette.base05)
+  recolour(keywords, palette.base0E)
+  recolour({ 'Macro' }, palette.base0D)     -- macros read as the functions they are used like
+  recolour({ 'Character' }, palette.base0B) -- a character is a short string
+  recolour({ 'Comment' }, muted(palette))
+  -- the bracket matching the one under the cursor: unmistakable
+  vim.api.nvim_set_hl(0, 'MatchParen', { fg = number(palette.base09), bg = number(palette.base02), bold = true })
+end
+
 local function style()
+  if M.current and M.current.palette then calm(M.current.palette) end
   -- which colours does this theme use for its surfaces?
   local shades = {}
   for _, name in ipairs(surfaces) do
@@ -178,7 +260,7 @@ end
 -- thrown away whenever plugins are updated. Bump CACHE_VERSION when the rules
 -- above change. The key is compared as plain text (hashing it cost 3.9 ms).
 --------------------------------------------------------------------------------
-local CACHE_VERSION = 7
+local CACHE_VERSION = 9
 local cache_dir = vim.fn.stdpath('cache') .. '/czernous-theme'
 
 local function cache_key(theme)
@@ -280,6 +362,19 @@ end
 
 --- Where the colours come from, for :checkhealth (set by pick()).
 M.source = nil
+--- True when a palette is supplied from outside (then there is nothing to choose).
+M.external = false
+
+-- The palette picked with <leader>tp, per polarity: { dark = name, light = name }.
+local choice_file = vim.fn.stdpath('state') .. '/czernous-palettes.json'
+local function chosen()
+  local fd = io.open(choice_file, 'r')
+  if not fd then return {} end
+  local text = fd:read('*a')
+  fd:close()
+  local ok, choice = pcall(vim.json.decode, text)
+  return ok and type(choice) == 'table' and choice or {}
+end
 
 --- Theme for the current terminal polarity (or the palette supplied from outside).
 local function pick()
@@ -288,12 +383,17 @@ local function pick()
     local palette, err = M.load_file(path)
     if palette then
       M.source = ('%s: %s'):format(who, path)
+      M.external = true
       return palette_theme(palette)
     end
     vim.notify(('%s palette: %s; using the built-in palette'):format(who, err), vim.log.levels.WARN)
   end
   local variant = vim.o.background == 'light' and 'light' or 'dark'
-  local builtin = ('%s/palettes/%s.json'):format(vim.fn.stdpath('config'), M.themes[variant])
+  local name = chosen()[variant] or M.themes[variant]
+  local builtin = ('%s/palettes/%s.json'):format(vim.fn.stdpath('config'), name)
+  if not vim.uv.fs_stat(builtin) then -- a remembered palette that is gone
+    builtin = ('%s/palettes/%s.json'):format(vim.fn.stdpath('config'), M.themes[variant])
+  end
   M.source = 'built-in palette: ' .. builtin
   local palette, err = M.load_file(builtin)
   if not palette then
@@ -344,6 +444,36 @@ end
 
 --- Ask for the dark or light theme explicitly. Refused if it doesn't match the
 --- terminal: a light theme on a dark terminal (or the reverse) is never applied.
+--- Step through the built-in palettes of the terminal's polarity (step = 1 or
+--- -1) and remember the choice. Returns false when the colours come from
+--- outside (Stylix, $NVIM_BASE16_PALETTE): there is nothing to choose then.
+function M.next_palette(step)
+  if M.external then
+    vim.notify(('The colours come from %s -- the built-in palettes are not in use.'):format(M.source))
+    return false
+  end
+  local variant = vim.o.background == 'light' and 'light' or 'dark'
+  local names = {}
+  for _, file in ipairs(vim.fn.globpath(vim.fn.stdpath('config') .. '/palettes', '*.json', false, true)) do
+    local palette = M.load_file(file)
+    if palette and palette.variant == variant then names[#names + 1] = vim.fn.fnamemodify(file, ':t:r') end
+  end
+  table.sort(names)
+  if #names == 0 then return false end
+  local at = 1
+  for i, name in ipairs(names) do
+    if M.current and M.current.palette and M.current.palette.name == name then at = i end
+  end
+  at = (at - 1 + step) % #names + 1
+  local choice = chosen()
+  choice[variant] = names[at]
+  vim.fn.mkdir(vim.fn.fnamemodify(choice_file, ':h'), 'p')
+  vim.fn.writefile({ vim.json.encode(choice) }, choice_file)
+  apply(pick())
+  vim.notify(('Palette: %s (%d of %d)'):format(names[at], at, #names))
+  return true
+end
+
 function M.use(variant)
   if variant ~= vim.o.background then
     vim.notify(('Theme: the terminal is %s; the %s theme is not applied'):format(vim.o.background, variant), vim.log.levels.WARN)

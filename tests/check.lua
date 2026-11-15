@@ -689,6 +689,85 @@ check.global('stylix_palette_picked_up', function()
   return good and true or false, ('with the Stylix file: %s || with $NVIM_BASE16_PALETTE too: %s'):format(from_stylix:sub(1, 160), from_env:sub(1, 80))
 end)
 
+-- Calm code colours, whatever the palette (the look of Catppuccin / One Dark /
+-- Rosé Pine themselves, which a plain base16 renderer does not give):
+--   names and punctuation are plain text; every keyword has the one keyword
+--   colour; the matching bracket stands out; comments are muted but readable.
+check.global('code_colours_are_calm', function()
+  local probe = "autocmd VimEnter * ++once lua local t = require('czernous.theme') local p = t.current.palette local function hl(n) return vim.api.nvim_get_hl(0, { name = n, link = false }) end local function hex(n) return n and ('#%06x'):format(n) or 'none' end local function is(n, base) return hex(hl(n).fg) == p[base] and 'ok' or (n .. '=' .. hex(hl(n).fg)) end local m = hl('MatchParen') io.stdout:write(('CALM names=%s,%s,%s,%s keywords=%s,%s,%s,%s,%s match=%s/%s/%s comment=%s base00=%s'):format(is('Identifier', 'base05'), is('@property', 'base05'), is('Delimiter', 'base05'), is('@variable', 'base05'), is('Statement', 'base0E'), is('Repeat', 'base0E'), is('Include', 'base0E'), is('@keyword.return', 'base0E'), is('Keyword', 'base0E'), hex(m.fg), hex(m.bg), tostring(m.bold), hex(hl('Comment').fg), p.base00)) vim.cmd('qa!')"
+  local function luminance(colour)
+    local n = tonumber(colour:sub(2), 16)
+    local function channel(v) v = v / 255; return v <= 0.03928 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4 end
+    return 0.2126 * channel(math.floor(n / 65536)) + 0.7152 * channel(math.floor(n / 256) % 256) + 0.0722 * channel(n % 256)
+  end
+  local function contrast(a, b)
+    local la, lb = luminance(a), luminance(b)
+    return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05)
+  end
+  local bad, checked = {}, 0
+  for _, file in ipairs(vim.fn.globpath(root .. '/palettes', '*.json', false, true)) do
+    local name = vim.fn.fnamemodify(file, ':t:r')
+    local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd', probe },
+      { text = true, cwd = root, env = { NVIM_BASE16_PALETTE = file, XDG_CACHE_HOME = vim.fn.tempname() } }):wait(30000)
+    local out = (r.stdout or '') .. (r.stderr or '')
+    local names, keywords, fg, bg, bold, comment, base00 = out:match('names=(%S+) keywords=(%S+) match=(%S+)/(%S+)/(%S+) comment=(%S+) base00=(%S+)')
+    if not names then
+      bad[#bad + 1] = name .. ': no answer ' .. out:sub(1, 80)
+    else
+      checked = checked + 1
+      if names ~= 'ok,ok,ok,ok' then bad[#bad + 1] = name .. ': names/punctuation not plain (' .. names .. ')' end
+      if keywords ~= 'ok,ok,ok,ok,ok' then bad[#bad + 1] = name .. ': keywords not one colour (' .. keywords .. ')' end
+      if fg == 'none' or bg == 'none' or bold ~= 'true' then bad[#bad + 1] = ('%s: matching bracket not marked (fg %s bg %s bold %s)'):format(name, fg, bg, bold) end
+      local ratio = comment ~= 'none' and contrast(comment, base00) or 0
+      if ratio < 3.5 then bad[#bad + 1] = ('%s: comments at %.1f:1 against the background (want 3.5 or more)'):format(name, ratio) end
+    end
+  end
+  return #bad == 0 and checked >= 4, ('%d palettes checked; %s'):format(checked, table.concat(bad, ' | '))
+end)
+
+-- <leader>tp / <leader>tP step through the built-in palettes of the terminal's
+-- polarity; the choice is remembered. With a palette supplied from outside
+-- (Stylix) there is nothing to choose and it says so.
+check.global('palettes_can_be_tried', function()
+  local keys = {}
+  for _, k in ipairs(require('czernous.keymaps').all()) do keys[k.lhs] = true end
+  if not (keys['<leader>tp'] and keys['<leader>tP']) then return false, '<leader>tp / <leader>tP missing' end
+  local state = vim.fn.tempname()
+  local function child(lua, palette_env)
+    local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+      "autocmd VimEnter * ++once lua local t = require('czernous.theme') " .. lua .. " io.stdout:write('NOW=' .. t.current.name .. ' ' .. vim.o.background) vim.cmd('qa!')" },
+      { text = true, cwd = root, env = { NVIM_BASE16_PALETTE = palette_env, XDG_STATE_HOME = state, XDG_CACHE_HOME = state .. '/cache' } }):wait(30000)
+    return (r.stdout or '') .. (r.stderr or '')
+  end
+  local first = child('', 'builtin'):match('NOW=(%S+)')
+  local stepped = child('t.next_palette(1)', 'builtin'):match('NOW=(%S+)')
+  local remembered = child('', 'builtin'):match('NOW=(%S+) dark')
+  local back = child('t.next_palette(-1)', 'builtin'):match('NOW=(%S+)')
+  local supplied = child("local said = '' vim.notify = function(m) said = said .. m end local moved = t.next_palette(1) io.stdout:write('MOVED=' .. tostring(moved) .. ' SAID=' .. said .. ' ')", root .. '/palettes/onedark.json')
+  local good = first and stepped and first ~= stepped and remembered == stepped and back == first
+    and supplied:find('MOVED=false', 1, true) and supplied:find('NOW=base16-onedark', 1, true) and supplied:find('SAID=%S')
+  return good and true or false, ('start %s, next %s, remembered %s, back %s | supplied: %s'):format(tostring(first), tostring(stepped), tostring(remembered), tostring(back), supplied:sub(1, 160))
+end)
+
+-- Which plugins get colours is worked out from the plugin specs: installed ones
+-- are themed, others are not defined at all (fewer groups to replay at every
+-- start), and theme.lua names no plugin list to keep in step.
+check.global('theme_follows_installed_plugins', function()
+  local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+    "autocmd VimEnter * ++once lua local function has(n) return next(vim.api.nvim_get_hl(0, { name = n })) ~= nil end local n = 0 for _ in pairs(vim.api.nvim_get_hl(0, {})) do n = n + 1 end io.stdout:write(('OURS=%s,%s,%s OTHERS=%s,%s,%s GROUPS=%d'):format(tostring(has('TelescopeBorder')), tostring(has('GitSignsAdd')), tostring(has('WhichKey')), tostring(has('NeoTreeNormal')), tostring(has('BufferLineFill')), tostring(has('NvimTreeNormal')), n)) vim.cmd('qa!')" },
+    { text = true, cwd = root, env = { XDG_CACHE_HOME = vim.fn.tempname() } }):wait(30000)
+  local out = (r.stdout or '') .. (r.stderr or '')
+  local source = table.concat(vim.fn.readfile(root .. '/lua/czernous/theme.lua'), '\n')
+  local named = {}
+  for _, plugin in pairs(require('lazy.core.config').plugins) do
+    -- (the renderer plugin itself is named where it is loaded)
+    if plugin[1] and plugin.name ~= 'mini.base16' and source:find(plugin[1], 1, true) then named[#named + 1] = plugin[1] end
+  end
+  local groups = tonumber(out:match('GROUPS=(%d+)')) or 0
+  local good = out:find('OURS=true,true,true OTHERS=false,false,false', 1, true) and #named == 0 and groups < 700
+  return good and true or false, ('%s; plugins named in theme.lua: [%s]'):format(out:sub(1, 120), table.concat(named, ', '))
+end)
+
 check.global('special_buffers_are_quiet', function()
   local before = #check.errors
   for _, cmd in ipairs({ 'help help', 'Oil', 'terminal', 'enew' }) do
