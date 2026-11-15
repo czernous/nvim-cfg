@@ -44,7 +44,7 @@ build, start), and the weekly `update` job creates and moves `flake.lock`; see
 ```sh
 nix flake check                 # evaluates everything
 nix build .#neovim              # the self-contained package
-nix develop .#go                # a devshell; also rust, java, dotnet, web, lua, python
+nix develop .#go                # a devshell; also rust, cpp, java, dotnet, web, lua, python
 nix run .#update-plugins        # in a clone: move lazy-lock.json to the newest commits
 ```
 
@@ -57,6 +57,21 @@ Things most likely to need a fix on first evaluation:
 - `nix/package.nix` passes `--cmd 'set rtp^=<config>' -u <config>/init.lua` to
   Neovim through the wrapper; the same command line is what the check
   `runs_from_another_config_folder` runs here.
+
+## A faster linker (mold)
+
+The `rust` and `cpp` devshells carry [mold](https://github.com/rui314/mold), a much
+faster drop-in for the default linker (`ld.bfd`). Having it on `$PATH` changes
+nothing by itself; a project opts in:
+
+- Rust, in the project's `.cargo/config.toml`:
+  `[target.x86_64-unknown-linux-gnu]` / `rustflags = ["-C", "link-arg=-fuse-ld=mold"]`
+  (or run a single command as `mold -run cargo build`);
+- C / C++ with CMake 3.29 or newer: `-DCMAKE_LINKER_TYPE=MOLD` (in a preset:
+  `"CMAKE_LINKER_TYPE": "MOLD"` under `cacheVariables`); older CMake:
+  `-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold`.
+
+Linux only. Not measured here.
 
 ## Who manages the plugins
 

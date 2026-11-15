@@ -90,6 +90,7 @@ A language works when its tools are on `$PATH`. Nothing else to configure.
 |---|---|---|---|---|---|
 | Go | `gopls` | gopls | staticcheck (in gopls) | `dlv` | `go test` |
 | Rust | `rust-analyzer` | rustfmt (via server) | clippy, when installed | `lldb-dap` or `codelldb` | `cargo test` |
+| C / C++ | `clangd` (finds a CMake-preset build's `build/<preset>/compile_commands.json` by itself; a project's `.clangd` wins) | clang-format via clangd (the project's `.clang-format`) | clang-tidy via clangd (the project's `.clang-tidy`) | `lldb-dap` or `codelldb` | CMake: build, then `ctest` (the `debug` test preset, else the `build` folder); Catch2 and GoogleTest names |
 | Java | `jdtls` | jdtls with the project's Eclipse profile; `Space F` runs Spotless | – | not yet (planned with Nix) | `./gradlew test` or `mvn test` |
 | Kotlin | `kotlin-language-server` | server | – | not yet | `./gradlew test` |
 | C# | `csharp-ls` | server | – | `netcoredbg` | `dotnet test` |
@@ -199,7 +200,7 @@ optional home-manager module. home-manager is not required.
 ```sh
 nix run github:czernous/nvim-cfg                # try it
 nix profile install github:czernous/nvim-cfg    # install
-nix develop github:czernous/nvim-cfg#go         # Go toolchain + server + debugger (also rust, java, dotnet, web, lua, python)
+nix develop github:czernous/nvim-cfg#go         # Go toolchain + server + debugger (also rust, cpp, java, dotnet, web, lua, python)
 nix run .#update-plugins                        # in a clone: update the plugins (like :Lazy update)
 ```
 

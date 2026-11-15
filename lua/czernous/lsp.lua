@@ -21,6 +21,9 @@ M.servers = {
   csharp_ls = 'csharp-ls',
   vtsls = 'vtsls',
   kotlin_language_server = 'kotlin-language-server', -- .kt and Gradle .kts files
+  -- C / C++. Reads the project's .clang-format (<leader>f) and .clang-tidy
+  -- (its lints are reported as you type); see after/lsp/clangd.lua.
+  clangd = 'clangd',
   -- Linters that speak the language-server protocol: they REPORT style, format
   -- and lint violations as warnings/hints in the editor (nothing is auto-fixed).
   biome = 'biome', -- JS / TS / JSON / CSS (the project's Biome config decides)

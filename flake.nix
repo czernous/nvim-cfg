@@ -18,7 +18,7 @@
   # Colours: on a machine themed by Stylix the config follows Stylix's palette
   # file by itself (lua/czernous/theme.lua); nothing to set here.
   #
-  #   nix develop .#go            Neovim + Go + gopls + delve (also rust, java, dotnet, web, lua, python)
+  #   nix develop .#go            Neovim + Go + gopls + delve (also rust, cpp, java, dotnet, web, lua, python)
   #   nix run github:czernous/nvim-cfg     try it: no install, no home-manager, no clone
   #   nix build .#neovim          Neovim with this config, the plugins and the basic tools
   #   nix run .#update-plugins    update the plugins (rewrites lazy-lock.json)

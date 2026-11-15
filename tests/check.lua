@@ -1991,6 +1991,7 @@ check.lang({ name = 'csharp', file = fixtures .. '/csharp/Program.cs', server = 
 check.lang({ name = 'ts', file = fixtures .. '/ts/index.ts', server = 'vtsls', exe = 'vtsls' })
 check.lang({ name = 'java', file = fixtures .. '/java/src/Main.java', server = 'jdtls', exe = 'jdtls', timeout_ms = 90000 })
 check.lang({ name = 'lua', file = fixtures .. '/lua/init.lua', server = 'lua_ls', exe = 'lua-language-server' })
+check.lang({ name = 'cpp', file = fixtures .. '/cpp/main.cpp', server = 'clangd', exe = 'clangd', timeout_ms = 60000 })
 if vim.env.CHECK_JAVA_PROJECT and vim.env.CHECK_JAVA_PROJECT ~= '' then
   local f = vim.fn.globpath(vim.env.CHECK_JAVA_PROJECT, '**/src/main/**/*.java', false, true)[1]
   if f then check.lang({ name = 'java-project', file = f, server = 'jdtls', exe = 'jdtls', timeout_ms = 180000 }) end
@@ -2208,6 +2209,33 @@ end)
 ---------------------------------------------------------------------------
 -- Stage 2b: running tests (<leader>r...)
 ---------------------------------------------------------------------------
+-- C / C++: clangd is told where a CMake-preset build keeps its compile
+-- database (build/<preset>/), newest first -- unless the project says so itself.
+check.global('clangd_finds_preset_build_folder', function()
+  if not require('czernous.lsp').servers.clangd then return false, 'clangd is not in lsp.servers' end
+  local settings = dofile(root .. '/after/lsp/clangd.lua')
+  local function asked(files)
+    local dir = vim.fn.tempname()
+    for i, file in ipairs(files) do
+      vim.fn.mkdir(vim.fs.dirname(dir .. '/' .. file), 'p')
+      vim.fn.writefile({ '[]' }, dir .. '/' .. file)
+      vim.uv.fs_utime(dir .. '/' .. file, 1000 + i, 1000 + i) -- later in the list = newer
+    end
+    local params = {}
+    settings.before_init(params, { root_dir = dir })
+    local path = vim.tbl_get(params, 'initializationOptions', 'compilationDatabasePath')
+    return path and path:sub(#dir + 2) or 'nothing'
+  end
+  local got = {
+    presets = asked({ 'build/release/compile_commands.json', 'build/debug/compile_commands.json' }),
+    own_file = asked({ 'build/debug/compile_commands.json', '.clangd' }),
+    plain = asked({ 'build/debug/compile_commands.json', 'build/compile_commands.json' }),
+    none = asked({ 'src/main.cpp' }),
+  }
+  local good = got.presets == 'build/debug' and got.own_file == 'nothing' and got.plain == 'nothing' and got.none == 'nothing'
+  return good, vim.inspect(got):gsub('%s+', ' ')
+end)
+
 check.global('test_keys_present', function()
   local missing = {}
   for _, lhs in ipairs({ '<leader>rt', '<leader>rf', '<leader>ra', '<leader>rl', '<leader>rn' }) do
@@ -2244,6 +2272,20 @@ check.global('test_commands_per_language', function()
       nearest = { 'cargo', 'test', 'adds' }, nearest_cwd = '',
       file_cmd = { 'cargo', 'test', 'calc::' },
       all = { 'cargo', 'test' }, all_cwd = '' },
+    { parser = 'cpp', file = 'tests/test_vec3.cpp', cursor = 6,
+      files = { ['CMakeLists.txt'] = { 'project(x)' }, ['tests/CMakeLists.txt'] = { '' },
+        ['CMakePresets.json'] = { '{ "version": 6, "testPresets": [ { "name": "release" }, { "name": "debug" } ] }' },
+        ['tests/test_vec3.cpp'] = { '#include <catch2/catch_test_macros.hpp>', 'TEST_CASE("vec3 adds", "[vec3]") {', '  REQUIRE(1 + 1 == 2);', '}',
+          'TEST_CASE("vec3 length (squared)") {', '  REQUIRE(2 * 2 == 4);', '}', 'TEST(Suite, Name) {', '}' } },
+      nearest = { 'sh', '-c', 'cmake --build --preset "$0" && ctest --preset "$0" --output-on-failure "$@"', 'debug', '-R', [[^(vec3 length \(squared\))$]] }, nearest_cwd = '',
+      file_cmd = { 'sh', '-c', 'cmake --build --preset "$0" && ctest --preset "$0" --output-on-failure "$@"', 'debug', '-R', [[^(vec3 adds|vec3 length \(squared\)|Suite\.Name)$]] },
+      all = { 'sh', '-c', 'cmake --build --preset "$0" && ctest --preset "$0" --output-on-failure "$@"', 'debug' }, all_cwd = '' },
+    { parser = 'c', file = 'tests/t.c', cursor = 2,
+      files = { ['CMakeLists.txt'] = { 'project(x)' }, ['tests/CMakeLists.txt'] = { '' },
+        ['tests/t.c'] = { 'TEST(Calc, Adds) {', '}' } },
+      nearest = { 'sh', '-c', 'cmake --build "$0" && ctest --test-dir "$0" --output-on-failure "$@"', 'build', '-R', [[^(Calc\.Adds)$]] }, nearest_cwd = '',
+      file_cmd = { 'sh', '-c', 'cmake --build "$0" && ctest --test-dir "$0" --output-on-failure "$@"', 'build', '-R', [[^(Calc\.Adds)$]] },
+      all = { 'sh', '-c', 'cmake --build "$0" && ctest --test-dir "$0" --output-on-failure "$@"', 'build' }, all_cwd = '' },
     { parser = 'java', file = 'app/src/test/java/com/x/CalcTest.java', cursor = 5,
       files = { ['gradlew'] = { '#!/bin/sh' }, ['settings.gradle.kts'] = { '' },
         ['app/src/test/java/com/x/CalcTest.java'] = { 'package com.x;', 'class CalcTest {', '  @Test', '  void adds() {', '    int a = 1;', '  }', '}' } },

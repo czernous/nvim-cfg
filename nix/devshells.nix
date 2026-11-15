@@ -37,6 +37,19 @@ in
       clippy # lints, shown as you save
       rustfmt
       lldb # debugger: lldb-dap
+      mold # fast linker; a project opts in (docs/nix.md)
+    ]
+  );
+
+  cpp = shell "cpp" (
+    with pkgs;
+    [
+      clang
+      clang-tools # clangd (language server), clang-format, clang-tidy
+      cmake
+      ninja
+      lldb # debugger: lldb-dap
+      mold # fast linker; a project opts in (docs/nix.md)
     ]
   );
 

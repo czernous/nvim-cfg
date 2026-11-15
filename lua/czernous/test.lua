@@ -10,6 +10,8 @@
 --   Go          go test                  Rust   cargo test
 --   Java/Kotlin ./gradlew test (or mvn)  C#     dotnet test
 --   JS / TS     bun test (bun.lock), else the project's vitest or jest
+--   C / C++     CMake: build, then ctest (the project's `debug` test preset
+--               when CMakePresets.json has one, else the `build` folder)
 --
 -- The file is saved first (tests run what is on disk). A missing program gives
 -- one message that names it.
@@ -188,6 +190,57 @@ end
 builders.javascript = builders.typescript
 builders.typescriptreact = builders.typescript
 builders.javascriptreact = builders.typescript
+
+--- C and C++ with CMake. The tests are built first (ctest runs what is on
+--- disk), then run by ctest; a single test is picked by its name, which is
+--- how Catch2's catch_discover_tests and GoogleTest's gtest_discover_tests
+--- register them (`the case name` / `Suite.Name`).
+local function ctest_names(lines)
+  local names = {}
+  for _, line in ipairs(lines) do
+    local name = line:match('^%s*TEST_CASE%s*%(%s*"(.-)"') or line:match('^%s*SCENARIO%s*%(%s*"(.-)"')
+    if line:match('^%s*SCENARIO') and name then name = 'Scenario: ' .. name end
+    if not name then
+      local suite, case = line:match('^%s*TEST[_FP]*%s*%(%s*([%w_]+)%s*,%s*([%w_]+)%s*%)')
+      name = suite and (suite .. '.' .. case) or nil
+    end
+    if name then names[#names + 1] = name end
+  end
+  return names
+end
+
+function builders.cpp(kind, _, dir)
+  local root = folder_with(dir, { 'CMakePresets.json' })
+  local preset
+  if root then
+    local fd = io.open(root .. '/CMakePresets.json', 'r')
+    local ok, presets = pcall(vim.json.decode, fd and fd:read('*a') or '')
+    if fd then fd:close() end
+    for _, test in ipairs(ok and type(presets) == 'table' and presets.testPresets or {}) do
+      if not test.hidden and (not preset or test.name == 'debug') then preset = test.name end
+    end
+  end
+  if not preset then
+    -- no presets: the outermost CMakeLists.txt is the project, `build` its build folder
+    local lists = vim.fs.find('CMakeLists.txt', { upward = true, path = dir, limit = math.huge })
+    root = lists[#lists] and vim.fs.dirname(lists[#lists])
+    if not root then return nil, 'No CMakeLists.txt above this file.' end
+  end
+  local filter = {}
+  if kind ~= 'all' then
+    local last = kind == 'nearest' and vim.api.nvim_win_get_cursor(0)[1] or -1
+    local names = ctest_names(vim.api.nvim_buf_get_lines(0, 0, last, false))
+    if #names == 0 then return nil, kind == 'nearest' and no_test_here or 'No TEST_CASE / TEST in this file.' end
+    if kind == 'nearest' then names = { names[#names] } end -- the test that starts at or above the cursor
+    for i, name in ipairs(names) do names[i] = name:gsub('[%^%$%.%*%+%?%(%)%[%]%{%}%|\\]', '\\%0') end
+    filter = { '-R', '^(' .. table.concat(names, '|') .. ')$' }
+  end
+  -- two programs, the second only if the first succeeds: one small shell line
+  local script = preset and 'cmake --build --preset "$0" && ctest --preset "$0" --output-on-failure "$@"'
+    or 'cmake --build "$0" && ctest --test-dir "$0" --output-on-failure "$@"'
+  return { cmd = vim.list_extend({ 'sh', '-c', script, preset or 'build' }, filter), cwd = root }
+end
+builders.c = builders.cpp
 
 --- The command for `kind` ('nearest' | 'file' | 'all') in the current buffer:
 --- { cmd = { program, args... }, cwd = folder }, or nil and why not.
