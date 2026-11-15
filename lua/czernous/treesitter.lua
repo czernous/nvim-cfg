@@ -10,7 +10,7 @@ local M = {}
 
 M.parsers = {
   -- languages you write
-  'go', 'gomod', 'gosum', 'rust', 'c_sharp', 'java', 'javascript', 'typescript', 'tsx', 'lua',
+  'astro', 'go', 'gomod', 'gosum', 'rust', 'c_sharp', 'java', 'javascript', 'typescript', 'tsx', 'lua',
   -- config, docs, shell and friends
   'bash', 'c', 'cmake', 'cpp', 'diff', 'html', 'jsdoc', 'json', 'luadoc', 'luap', 'markdown',
   'markdown_inline', 'python', 'query', 'regex', 'sql', 'toml', 'vim', 'vimdoc', 'yaml',
