@@ -29,6 +29,8 @@
 --      colour, strings / functions / types / constants keep theirs, comments
 --      are muted but readable (3.5:1), the matching bracket is unmistakable.
 --      The same for every palette (see calm()).
+--   6. One border, one title: every popup border is the same quiet colour and
+--      every popup title looks the same, whichever plugin draws it.
 --   4. The result is cached, so a start costs ~0.6 ms instead of ~3 ms and the
 --      theme plugin is not even loaded.
 --
@@ -121,13 +123,27 @@ end
 --- Groups that keep a background: the listed accents and every selection group.
 function M.is_accent(name) return accent_set()[name] == true or M.is_selection(name) end
 
---- Rules 2 and 3, applied to every highlight group that exists right now. Also
+--- Rules 2, 3 and 6, applied to every highlight group that exists right now. Also
 --- run for groups that plugins define later.
 function M.restyle()
   local shades = M.shades
   local selection = vim.api.nvim_get_hl(0, { name = 'Visual', link = false }).bg
   local popup = vim.api.nvim_get_hl(0, { name = 'NormalFloat', link = false }).bg
+  local border = vim.api.nvim_get_hl(0, { name = 'FloatBorder', link = false }).fg
+  local title = vim.api.nvim_get_hl(0, { name = 'FloatTitle', link = false }).fg
+  local function fg_of(name) return vim.api.nvim_get_hl(0, { name = name, link = false }).fg end
   for name, def in pairs(vim.api.nvim_get_hl(0, {})) do
+    -- Rule 6: one border, one title. Every group named ...Border follows the
+    -- popup border and every ...Title the popup title, whichever plugin defines
+    -- it (renderers give some plugins' borders a palette colour of their own,
+    -- which is a different, arbitrary colour in every palette).
+    if name ~= 'FloatBorder' and name:find('Border$') and fg_of(name) ~= border then
+      def = { link = 'FloatBorder' }
+      vim.api.nvim_set_hl(0, name, def)
+    elseif name ~= 'FloatTitle' and name ~= 'Title' and name:find('Title$') and fg_of(name) ~= title then
+      def = { link = 'FloatTitle' }
+      vim.api.nvim_set_hl(0, name, def)
+    end
     -- All-or-nothing, in both directions: with transparency OFF a popup's border
     -- must be as solid as the popup. Themes often give borders no background
     -- (they rely on the editor's), which would leave a see-through frame.
@@ -177,8 +193,12 @@ end
 --- can be read against the background (3.5:1), otherwise the text colour
 --- faded towards the background just far enough to be.
 local function muted(palette) -- (aims a little above 3.5: colours are whole numbers)
+  -- "muted" also means clearly quieter than the text: some palettes keep a
+  -- light colour in their dim slots
+  local ceiling = 0.75 * contrast(palette.base05, palette.base00)
   for _, key in ipairs({ 'base03', 'base04' }) do
-    if contrast(palette[key], palette.base00) >= 3.6 then return palette[key] end
+    local c = contrast(palette[key], palette.base00)
+    if c >= 3.6 and c <= ceiling then return palette[key] end
   end
   for share = 0.35, 1, 0.05 do
     local colour = mix(palette.base05, palette.base00, share)
@@ -249,7 +269,7 @@ end
 -- thrown away whenever plugins are updated. Bump CACHE_VERSION when the rules
 -- above change. The key is compared as plain text (hashing it cost 3.9 ms).
 --------------------------------------------------------------------------------
-local CACHE_VERSION = 10
+local CACHE_VERSION = 12
 local cache_dir = vim.fn.stdpath('cache') .. '/czernous-theme'
 
 local function cache_key(theme)

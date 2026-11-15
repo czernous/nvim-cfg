@@ -587,6 +587,27 @@ check.global('selection_is_visible_everywhere', function()
   return #bad == 0, ('selection colour is %s but: %s'):format(hex(visual), table.concat(bad, ', '))
 end)
 
+-- Every border is the same quiet colour and every popup title looks the same,
+-- whichever plugin draws it and whatever the palette (renderers give some
+-- plugins' borders an arbitrary palette colour of their own).
+check.global('borders_and_titles_look_the_same', function()
+  pcall(require, 'blink.cmp'); pcall(require, 'telescope'); pcall(require, 'which-key')
+  vim.wait(300)
+  local border, title, comment = hl('FloatBorder').fg, hl('FloatTitle').fg, hl('Comment').fg
+  local bad, seen = {}, 0
+  for name in pairs(vim.api.nvim_get_hl(0, {})) do
+    if name:find('Border$') then
+      seen = seen + 1
+      if hl(name).fg ~= border then bad[#bad + 1] = ('%s=%s'):format(name, hex(hl(name).fg) or 'none') end
+    elseif name:find('Title$') and name ~= 'Title' then
+      if hl(name).fg ~= title then bad[#bad + 1] = ('%s=%s'):format(name, hex(hl(name).fg) or 'none') end
+    end
+  end
+  table.sort(bad)
+  return #bad == 0 and seen >= 5 and border == comment,
+    ('borders should be %s (the comment colour %s), titles %s; %d border groups; differing: %s'):format(hex(border) or 'none', hex(comment) or 'none', hex(title) or 'none', seen, table.concat(bad, ', '))
+end)
+
 check.global('popups_have_borders', function()
   return vim.o.winborder ~= '' and vim.o.winborder ~= 'none', "winborder = '" .. vim.o.winborder .. "' (transparent popups need a border to be readable)"
 end)
@@ -694,7 +715,7 @@ end)
 --   names are plain text and punctuation is muted; every keyword has the one
 --   keyword colour; the matching bracket stands out; comments are muted but readable.
 check.global('code_colours_are_calm', function()
-  local probe = "autocmd VimEnter * ++once lua local t = require('czernous.theme') local p = t.current.colors local function hl(n) return vim.api.nvim_get_hl(0, { name = n, link = false }) end local function hex(n) return n and ('#%06x'):format(n) or 'none' end local function is(n, base) return hex(hl(n).fg) == p[base] and 'ok' or (n .. '=' .. hex(hl(n).fg)) end local m = hl('MatchParen') io.stdout:write(('CALM names=%s,%s,%s,%s keywords=%s,%s,%s,%s,%s match=%s/%s/%s comment=%s base00=%s'):format(is('Identifier', 'base05'), is('@property', 'base05'), (hl('Delimiter').fg == hl('Comment').fg and hl('@punctuation.bracket').fg == hl('Comment').fg) and 'ok' or 'punctuation-not-muted', is('@variable', 'base05'), is('Statement', 'base0E'), is('Repeat', 'base0E'), is('Include', 'base0E'), is('@keyword.return', 'base0E'), is('Keyword', 'base0E'), hex(m.fg), hex(m.bg), tostring(m.bold), hex(hl('Comment').fg), p.base00)) vim.cmd('qa!')"
+  local probe = "autocmd VimEnter * ++once lua local t = require('czernous.theme') local p = t.current.colors local function hl(n) return vim.api.nvim_get_hl(0, { name = n, link = false }) end local function hex(n) return n and ('#%06x'):format(n) or 'none' end local function is(n, base) return hex(hl(n).fg) == p[base] and 'ok' or (n .. '=' .. hex(hl(n).fg)) end local m = hl('MatchParen') io.stdout:write(('CALM names=%s,%s,%s,%s keywords=%s,%s,%s,%s,%s match=%s/%s/%s comment=%s base00=%s text=%s'):format(is('Identifier', 'base05'), is('@property', 'base05'), (hl('Delimiter').fg == hl('Comment').fg and hl('@punctuation.bracket').fg == hl('Comment').fg) and 'ok' or 'punctuation-not-muted', is('@variable', 'base05'), is('Statement', 'base0E'), is('Repeat', 'base0E'), is('Include', 'base0E'), is('@keyword.return', 'base0E'), is('Keyword', 'base0E'), hex(m.fg), hex(m.bg), tostring(m.bold), hex(hl('Comment').fg), p.base00, p.base05)) vim.cmd('qa!')"
   local function luminance(colour)
     local n = tonumber(colour:sub(2), 16)
     local function channel(v) v = v / 255; return v <= 0.03928 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4 end
@@ -710,7 +731,7 @@ check.global('code_colours_are_calm', function()
     local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd', probe },
       { text = true, cwd = root, env = { NVIM_BASE16_PALETTE = file, XDG_CACHE_HOME = vim.fn.tempname() } }):wait(30000)
     local out = (r.stdout or '') .. (r.stderr or '')
-    local names, keywords, fg, bg, bold, comment, base00 = out:match('names=(%S+) keywords=(%S+) match=(%S+)/(%S+)/(%S+) comment=(%S+) base00=(%S+)')
+    local names, keywords, fg, bg, bold, comment, base00, text = out:match('names=(%S+) keywords=(%S+) match=(%S+)/(%S+)/(%S+) comment=(%S+) base00=(%S+) text=(%S+)')
     if not names then
       bad[#bad + 1] = name .. ': no answer ' .. out:sub(1, 80)
     else
@@ -719,6 +740,8 @@ check.global('code_colours_are_calm', function()
       if keywords ~= 'ok,ok,ok,ok,ok' then bad[#bad + 1] = name .. ': keywords not one colour (' .. keywords .. ')' end
       if fg == 'none' or bg == 'none' or bold ~= 'true' then bad[#bad + 1] = ('%s: matching bracket not marked (fg %s bg %s bold %s)'):format(name, fg, bg, bold) end
       local ratio = comment ~= 'none' and contrast(comment, base00) or 0
+      local text_ratio = contrast(text, base00)
+      if ratio > 0.8 * text_ratio then bad[#bad + 1] = ('%s: comments (%.1f:1) are not quieter than the text (%.1f:1)'):format(name, ratio, text_ratio) end
       if ratio < 3.5 then bad[#bad + 1] = ('%s: comments at %.1f:1 against the background (want 3.5 or more)'):format(name, ratio) end
     end
   end

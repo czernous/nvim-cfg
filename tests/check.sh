@@ -11,6 +11,11 @@ cd "$(dirname "$0")/.." || exit 1
 # The checks describe the built-in look: a Stylix palette on this machine (which
 # the config would follow) must not change their answers.
 export NVIM_BASE16_PALETTE="${NVIM_BASE16_PALETTE-builtin}"
+# ...nor must what this user has chosen and remembered (palette, softness):
+# the checks get a state folder of their own.
+XDG_STATE_HOME="$(mktemp -d "${TMPDIR:-/tmp}/nvim-check-state.XXXXXX")"
+export XDG_STATE_HOME
+trap 'rm -rf "$XDG_STATE_HOME"' EXIT
 
 if [ "$1" = "--tripwires" ]; then
   failed=0
@@ -34,4 +39,4 @@ if [ "$1" = "--tripwires" ]; then
   exit $failed
 fi
 
-exec nvim --headless --cmd "luafile tests/check.lua"
+nvim --headless --cmd "luafile tests/check.lua"
