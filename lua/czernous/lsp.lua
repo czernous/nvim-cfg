@@ -20,15 +20,31 @@ M.servers = {
   jdtls = 'jdtls',
   csharp_ls = 'csharp-ls',
   vtsls = 'vtsls',
+  astro = 'astro-ls',
   kotlin_language_server = 'kotlin-language-server', -- .kt and Gradle .kts files
   -- C / C++. Reads the project's .clang-format (<leader>f) and .clang-tidy
   -- (its lints are reported as you type); see after/lsp/clangd.lua.
   clangd = 'clangd',
+  pyright = 'pyright-langserver', -- Python types, completion, navigation and hover
   -- Linters that speak the language-server protocol: they REPORT style, format
   -- and lint violations as warnings/hints in the editor (nothing is auto-fixed).
   biome = 'biome', -- JS / TS / JSON / CSS (the project's Biome config decides)
-  ruff = 'ruff',   -- Python
+  ruff = 'ruff',   -- Python linting and formatting
 }
+
+-- Explicit manual fallbacks. Project tools/devshells retain PATH precedence.
+local mason_packages = {
+  gopls = 'gopls', rust_analyzer = 'rust-analyzer', lua_ls = 'lua-language-server',
+  jdtls = 'jdtls', csharp_ls = 'csharp-language-server', vtsls = 'vtsls',
+  kotlin_language_server = 'kotlin-language-server', clangd = 'clangd',
+  biome = 'biome', ruff = 'ruff', pyright = 'pyright', astro = 'astro-language-server',
+}
+
+function M.install_hint(name)
+  local package = mason_packages[name]
+  return 'Prefer the project toolchain or devshell.'
+    .. (package and (' Manual fallback: :MasonInstall ' .. package) or ' Install its server on PATH.')
+end
 
 --- Names of servers found and enabled (filled shortly after startup).
 M.enabled = {}
@@ -162,6 +178,10 @@ function M.describe_missing(filetype, starting)
   if starting then
     return ('The language server for %s files is still starting; try again in a moment.'):format(filetype)
   end
+  if filetype == 'python' then
+    return ('Python symbol documentation needs %s; Ruff only documents lint rules.\n%s')
+      :format(M.servers.pyright or 'pyright-langserver', M.install_hint('pyright'))
+  end
   return ('No language server is running for %s files, so there is no documentation to show.\n'
     .. 'Install one (it is picked up from $PATH) -- :checkhealth czernous lists what is missing.'):format(filetype)
 end
@@ -175,12 +195,26 @@ local builtin_lookup = { help = true, vim = true, man = true, sh = true, bash = 
 --- attached it says so (naming the language) instead of failing silently.
 function M.hover()
   local buf = vim.api.nvim_get_current_buf()
-  if #vim.lsp.get_clients({ bufnr = buf, method = 'textDocument/hover' }) > 0 then
+  local filetype = vim.bo[buf].filetype
+  if filetype == 'astro' and vim.b[buf].czernous_astro_missing_tool then
+    vim.notify(vim.b[buf].czernous_astro_missing_tool, vim.log.levels.WARN)
+    return
+  end
+  local clients = vim.lsp.get_clients({ bufnr = buf, method = 'textDocument/hover' })
+  if filetype == 'python' then
+    local line = vim.api.nvim_get_current_line()
+    local comment = line:find('#', 1, true)
+    local rule = comment and vim.api.nvim_win_get_cursor(0)[2] >= comment - 1
+      and line:sub(comment):find('noqa', 1, true)
+    if not rule then
+      clients = vim.tbl_filter(function(client) return client.name ~= 'ruff' end, clients)
+    end
+  end
+  if #clients > 0 then
     -- press K again to jump into the popup; q closes it
     vim.lsp.buf.hover({ border = 'rounded', max_width = 80, max_height = 20 })
     return
   end
-  local filetype = vim.bo[buf].filetype
   local starting = M.is_starting(buf)
   if builtin_lookup[filetype] and not starting then
     vim.cmd('normal! K') -- Vim's own lookup (help pages, man pages)

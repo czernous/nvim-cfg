@@ -49,6 +49,8 @@ M.debuggers = {
           name = "Debug this file's package (its tests, from a _test.go file)",
           mode = function() return vim.api.nvim_buf_get_name(0):match('_test%.go$') and 'test' or 'debug' end,
           program = '${fileDirname}',
+          cwd = '${fileDirname}', -- debuggee working directory
+          dlvCwd = '${fileDirname}', -- Delve must build inside this module too
         },
       }
     end,

@@ -84,7 +84,8 @@ Keys that changed from older versions of this config: `docs/perf/changed-keys.md
 
 ## Languages and tools
 
-A language works when its tools are on `$PATH`. Nothing else to configure.
+Configured language servers are enabled when their commands are on Neovim's startup `$PATH`. Project SDKs and dependencies still need to be installed.
+Project-local server discovery and environment changes after startup are not yet automatic.
 
 | Language | Language server | Formatter (`Space f`) | Linting | Debugger | Tests |
 |---|---|---|---|---|---|
@@ -96,12 +97,20 @@ A language works when its tools are on `$PATH`. Nothing else to configure.
 | C# | `csharp-ls` | server | – | `netcoredbg` | `dotnet test` |
 | TypeScript / JavaScript | `vtsls` | `biome` or `oxfmt` (project's own copy first) | `biome` | – | `bun test`, or the project's vitest / jest |
 | Lua | `lua-language-server` | `stylua` | – | – | – |
-| Python | – | `ruff` | `ruff` | – | – |
+| Python | `pyright-langserver` | `ruff` | `ruff` | – | – |
+| Astro | `astro-ls` plus a TypeScript SDK | – | server | – | – |
 
 - **Problems are reported, never auto-fixed.** No format-on-save, no inline
   error text. Counts are in the status line (`E2 W1`); `Space e e` lists them;
   `fix` appears in the status line when the line under the cursor has a fix
   (`Space e f` lists the fixes, each with a preview).
+- Astro uses an explicitly configured TypeScript SDK, then a project SDK within
+  the repository boundary, then the installed Mason Astro bundle. A missing
+  explicit SDK stops Astro with guidance. Full declared-version enforcement
+  across toolchains remains future work.
+- Syntax support installs parser/query bundles from the locked Tree-sitter plugin;
+  first use can require network access, the Tree-sitter CLI and a C compiler.
+  Highlighting and semantic language support are separate capabilities.
 - A missing server means no completion or documentation for that language, and
   one message saying which program to install. `:MasonInstall <server>` exists as
   a manual fallback for machines without the toolchain.

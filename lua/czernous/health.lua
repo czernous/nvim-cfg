@@ -51,8 +51,10 @@ function M.check()
       health.ok(('%s: %s'):format(program, vim.fn.exepath(program)))
     else
       health.warn(('%s not found on $PATH'):format(program), {
-        ('Without it there is no completion, documentation (K) or go-to-definition for that language (server: %s).'):format(name),
-        'Get it from the language toolchain or devshell; :MasonInstall is a fallback.',
+        (name == 'ruff' or name == 'biome')
+          and ('Missing lint/format support from %s; this is separate from the language documentation server.'):format(name)
+          or ('Missing completion, documentation (K) and navigation from %s.'):format(name),
+        require('czernous.lsp').install_hint(name),
       })
     end
   end
