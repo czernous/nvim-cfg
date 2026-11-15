@@ -42,13 +42,21 @@ jobs:
       ref: ${{ steps.propose.outputs.ref }}
       moved: ${{ steps.propose.outputs.moved }}
     steps:
-      - uses: actions/checkout@v4
+      # The token that can push is not left in the checkout for later steps to
+      # find: only the push below is given it. The one action here that is not
+      # GitHub's own is pinned to an exact commit (.github/dependabot.yml
+      # proposes newer ones).
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
         with:
           token: ${{ github.token }}
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@2126ae7fc54c9df00dd18f7f18754393182c73cd # v31.9.1
       - name: Move the lock files to the newest versions
         id: propose
+        env:
+          PUSH_TOKEN: ${{ github.token }}
         run: |
           set +e
           nvim -l nix/update-plugins.lua > "$RUNNER_TEMP/plugins.txt" 2>&1; lookup=$?
@@ -78,7 +86,7 @@ jobs:
           git -c user.name='github-actions[bot]' \
               -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
               commit -q -m "chore: update plugins and nixpkgs to the newest versions"
-          git push --force origin HEAD:refs/heads/updates/auto
+          git push --force "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/updates/auto
           echo "ref=updates/auto" >> "$GITHUB_OUTPUT"
 
   checks:

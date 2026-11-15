@@ -39,10 +39,11 @@ jobs:
       # the config is checked out as ./nvim, so this makes it the user's config
       XDG_CONFIG_HOME: ${{ github.workspace }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
           path: nvim
+          persist-credentials: false
       - uses: ./nvim/.github/actions/setup
         with:
           token: ${{ github.token }}
@@ -68,6 +69,11 @@ jobs:
           { echo '```'; cat "$RUNNER_TEMP/report.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           { echo 'report<<END_OF_REPORT'; cat "$RUNNER_TEMP/report.txt"; echo 'END_OF_REPORT'; } >> "$GITHUB_OUTPUT"
           if [ "$failed" -ne 0 ] || [ "$untripped" -ne 0 ]; then
+            # each failure also as an annotation: shown on the run's page without opening the log
+            grep -a -h -E '^(FAIL |NOT TRIPPED)' "$RUNNER_TEMP/checks.txt" "$RUNNER_TEMP/tripwires.txt" | cut -c1-900 \
+              | while IFS= read -r line; do echo "::error title=check failed::$line"; done
+            grep -a -q -E '^[0-9]+ passed' "$RUNNER_TEMP/checks.txt" \
+              || echo "::error title=checks did not finish::$(tail -5 "$RUNNER_TEMP/checks.txt" | tr '\n' ' ' | cut -c1-900)"
             echo "::group::Full output"; cat "$RUNNER_TEMP/checks.txt" "$RUNNER_TEMP/tripwires.txt"; echo "::endgroup::"
             exit 1
           fi
@@ -78,10 +84,11 @@ jobs:
     outputs:
       report: ${{ steps.build.outputs.report }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
-      - uses: cachix/install-nix-action@v31
+          persist-credentials: false
+      - uses: cachix/install-nix-action@2126ae7fc54c9df00dd18f7f18754393182c73cd # v31.9.1
       - name: Evaluate, build and start the package
         id: build
         run: |
@@ -101,6 +108,7 @@ jobs:
             tail -1 "$RUNNER_TEMP/nix.txt" > "$RUNNER_TEMP/report.txt"
           else
             { echo "the Nix build failed; last lines:"; tail -25 "$RUNNER_TEMP/nix.txt"; } > "$RUNNER_TEMP/report.txt"
+            echo "::error title=Nix build failed::$(grep -a -m3 -i 'error' "$RUNNER_TEMP/nix.txt" | tr '\n' ' ' | cut -c1-900)"
           fi
           { echo '```'; cat "$RUNNER_TEMP/report.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           { echo 'report<<END_OF_REPORT'; cat "$RUNNER_TEMP/report.txt"; echo 'END_OF_REPORT'; } >> "$GITHUB_OUTPUT"
