@@ -1,10 +1,8 @@
--- Colour schemes and the keymap popup. (The statusline is built in: statusline.lua.)
+-- The colour renderer and the keymap popup. (The statusline is built in: statusline.lua.)
 return {
-  -- Colour schemes. Neither is loaded at a normal start: theme.lua replays its
-  -- cached result. They load only when that cache has to be rebuilt.
-  { 'catppuccin/nvim', name = 'catppuccin' }, -- the default look (see theme.lua)
-  -- Renders a 16-colour base16 palette supplied from outside (how Stylix themes
-  -- Neovim). Not used unless $NVIM_BASE16_PALETTE is set.
+  -- Turns a 16-colour base16 palette into the whole colour scheme (theme.lua).
+  -- Not loaded at a normal start: theme.lua replays its cached result; this
+  -- loads only when that cache has to be rebuilt (new palette, plugin update).
   { 'nvim-mini/mini.base16' },
   {
     -- Press <leader> and wait: shows what the next key does.

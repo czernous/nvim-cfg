@@ -636,7 +636,7 @@ check.global('theme_cache_matches_fresh', function()
   local cache = vim.fn.tempname(); vim.fn.mkdir(cache, 'p')
   local function run()
     local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
-      "autocmd VimEnter * ++once lua local t = {} for n, d in pairs(vim.api.nvim_get_hl(0, {})) do t[#t + 1] = n .. vim.inspect(d, { newline = '', indent = '' }) end table.sort(t) io.stdout:write('HL=' .. vim.fn.sha256(table.concat(t)) .. ' renderer=' .. tostring(package.loaded['catppuccin'] ~= nil) .. ' n=' .. #t) vim.cmd('qa!')" },
+      "autocmd VimEnter * ++once lua local t = {} for n, d in pairs(vim.api.nvim_get_hl(0, {})) do t[#t + 1] = n .. vim.inspect(d, { newline = '', indent = '' }) end table.sort(t) io.stdout:write('HL=' .. vim.fn.sha256(table.concat(t)) .. ' renderer=' .. tostring(package.loaded['mini.base16'] ~= nil) .. ' n=' .. #t) vim.cmd('qa!')" },
       { text = true, cwd = root, env = { XDG_CACHE_HOME = cache } }):wait(30000)
     local out = (r.stdout or '') .. (r.stderr or '')
     return out:match('HL=(%x+)'), out:match('renderer=(%a+)'), out
@@ -1051,7 +1051,7 @@ check.global('only_theme_loads_at_startup', function()
   local loaded = out:match('LOADED=([^\n]*)')
   if not loaded then return false, 'child gave no answer: ' .. out:sub(1, 200) end
   -- the colour-scheme plugins may load (only when the theme cache is being rebuilt)
-  local allowed = { ['lazy.nvim'] = true, catppuccin = true, ['mini.base16'] = true }
+  local allowed = { ['lazy.nvim'] = true, ['mini.base16'] = true }
   local extra = {}
   for name in loaded:gmatch('[^,]+') do
     if not allowed[name] then extra[#extra + 1] = name end
@@ -1155,7 +1155,7 @@ end)
 -- colours: text = the theme's text colour, branch/filetype = its comment colour.
 check.global('statusline_colours_at_startup', function()
   local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
-    "autocmd VimEnter * ++once lua local function fg(n) return tostring(vim.api.nvim_get_hl(0, { name = n, link = false }).fg) end io.stdout:write(('COLOURS normal=%s text=%s comment=%s dim=%s cached=%s'):format(fg('Normal'), fg('CzStlText'), fg('Comment'), fg('CzStlDim'), tostring(package.loaded['catppuccin'] == nil))) vim.cmd('qa!')" },
+    "autocmd VimEnter * ++once lua local function fg(n) return tostring(vim.api.nvim_get_hl(0, { name = n, link = false }).fg) end io.stdout:write(('COLOURS normal=%s text=%s comment=%s dim=%s cached=%s'):format(fg('Normal'), fg('CzStlText'), fg('Comment'), fg('CzStlDim'), tostring(package.loaded['mini.base16'] == nil))) vim.cmd('qa!')" },
     { text = true, cwd = root }):wait(30000)
   local out = (r.stdout or '') .. (r.stderr or '')
   local normal, text, comment, dim, cached = out:match('normal=(%S+) text=(%S+) comment=(%S+) dim=(%S+) cached=(%S+)')
@@ -1609,7 +1609,7 @@ end)
 check.global('theme_failure_does_not_stop_startup', function()
   local cache = vim.fn.tempname(); vim.fn.mkdir(cache, 'p') -- empty: the theme has to be built
   local r = vim.system({ vim.v.progpath, '--headless', '-n',
-    '--cmd', "lua package.preload['catppuccin'] = function() error('simulated: theme plugin missing') end",
+    '--cmd', "lua package.preload['mini.base16'] = function() error('simulated: theme plugin missing') end",
     '--cmd', "autocmd VimEnter * ++once lua vim.defer_fn(function() io.stdout:write(('ALIVE stl=%s start=%s lsp=%s'):format(tostring(vim.o.statusline ~= ''), tostring(vim.b.czernous_start == true), tostring(package.loaded['czernous.lsp'] ~= nil))) vim.cmd('qa!') end, 400)" },
     { text = true, cwd = root, env = { XDG_CACHE_HOME = cache } }):wait(30000)
   local out = (r.stdout or '') .. (r.stderr or '')
@@ -2176,6 +2176,62 @@ check.global('help_uses_the_whole_window', function()
   vim.cmd('silent! %bwipeout!')
   return wins == 1 and is_help and at_topic and back,
     ('windows while reading help: %d, help shown: %s, at the topic: %s, q went back: %s'):format(wins, tostring(is_help), tostring(at_topic), tostring(back))
+end)
+
+---------------------------------------------------------------------------
+-- Stage 3: Nix. (Nix itself is not needed for these: they check the two things
+-- the flake relies on.)
+---------------------------------------------------------------------------
+-- nix/plugins.nix fetches each plugin in lazy-lock.json from the address in
+-- nix/plugin-sources.json; that file must name every plugin, with the address
+-- the plugin specs really use.
+check.global('nix_plugin_sources_match_specs', function()
+  local function read(path) return vim.json.decode(table.concat(vim.fn.readfile(root .. '/' .. path), '\n')) end
+  local ok, sources = pcall(read, 'nix/plugin-sources.json')
+  if not ok then return false, 'nix/plugin-sources.json missing or not JSON' end
+  local lock, bad = read('lazy-lock.json'), {}
+  local specs = require('lazy.core.config').plugins
+  for name in pairs(lock) do
+    if not sources[name] then
+      bad[#bad + 1] = name .. ' (in lazy-lock.json) has no source'
+    elseif specs[name] and specs[name].url ~= sources[name] then
+      bad[#bad + 1] = ('%s: %s, but the spec says %s'):format(name, sources[name], tostring(specs[name].url))
+    end
+  end
+  for name in pairs(sources) do
+    if not lock[name] then bad[#bad + 1] = name .. ' is not in lazy-lock.json' end
+  end
+  return #bad == 0, table.concat(bad, '; ')
+end)
+
+-- With $NVIM_PLUGIN_ROOT (how Nix hands over the plugins: one read-only folder) the config starts, opens a file with highlighting, and neither
+-- installs anything nor writes into that folder or the config folder.
+check.global('runs_from_supplied_plugin_folder', function()
+  local farm, state = vim.fn.tempname(), vim.fn.tempname()
+  vim.fn.mkdir(farm, 'p')
+  local lazy_dir = vim.fn.stdpath('data') .. '/lazy'
+  -- as in the Nix store: a real folder per plugin, its content without .git, read-only
+  for name, kind in vim.fs.dir(lazy_dir) do
+    if kind == 'directory' then
+      vim.fn.mkdir(farm .. '/' .. name)
+      for child in vim.fs.dir(lazy_dir .. '/' .. name) do
+        if child ~= '.git' then vim.uv.fs_symlink(lazy_dir .. '/' .. name .. '/' .. child, farm .. '/' .. name .. '/' .. child) end
+      end
+      vim.fn.setfperm(farm .. '/' .. name, 'r-xr-xr-x')
+    end
+  end
+  vim.fn.setfperm(farm, 'r-xr-xr-x')
+  local lock_before = vim.uv.fs_stat(root .. '/lazy-lock.json').mtime.sec
+  local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+    "autocmd VimEnter * ++once lua vim.defer_fn(function() vim.cmd.edit('tests/fixtures/go/main.go') vim.defer_fn(function() local cfg = require('lazy.core.config') local n = 0 for _ in pairs(cfg.plugins) do n = n + 1 end io.stdout:write(('ROOT=%s PLUGINS=%d HL=%s ERR=[%s]'):format(cfg.options.root, n, tostring(vim.treesitter.highlighter.active[vim.api.nvim_get_current_buf()] ~= nil), vim.v.errmsg)) vim.cmd('qa!') end, 1500) end, 100)" },
+    { text = true, cwd = root, env = { NVIM_PLUGIN_ROOT = farm, XDG_STATE_HOME = state } }):wait(40000)
+  vim.fn.setfperm(farm, 'rwxr-xr-x')
+  for name in vim.fs.dir(farm) do vim.fn.setfperm(farm .. '/' .. name, 'rwxr-xr-x') end -- so the temp folder can be cleaned up
+  local out = (r.stdout or '') .. (r.stderr or '')
+  local untouched = vim.uv.fs_stat(root .. '/lazy-lock.json').mtime.sec == lock_before
+  local good = out:find('ROOT=' .. farm, 1, true) and out:find('HL=true', 1, true) and out:find('ERR=[]', 1, true)
+    and tonumber(out:match('PLUGINS=(%d+)')) >= 20 and untouched
+  return good and true or false, out:sub(1, 300) .. (untouched and '' or ' (lazy-lock.json was rewritten)')
 end)
 
 local function cursor_on_call(buf)

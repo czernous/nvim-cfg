@@ -8,6 +8,10 @@
 #   CHECK_CANARY=1 ./tests/check.sh       inject an error to prove errors are caught
 cd "$(dirname "$0")/.." || exit 1
 
+# The checks describe the built-in look: a Stylix palette on this machine (which
+# the config would follow) must not change their answers.
+export NVIM_BASE16_PALETTE="${NVIM_BASE16_PALETTE-builtin}"
+
 if [ "$1" = "--tripwires" ]; then
   failed=0
   for pair in blocking:no_blocking_calls global:no_global_writes reflection:no_reflection \

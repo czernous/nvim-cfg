@@ -1,11 +1,15 @@
 -- The one place that decides how Neovim looks.
 --
 -- WHAT supplies the colours:
---   * by default a hand-tuned colour scheme, one per polarity (M.themes);
---   * or, if the environment provides one, a 16-colour base16 PALETTE file:
---     the one Stylix writes on a machine it themes (found by itself, see
---     palette_source), or any JSON like palettes/*.json named by
---     $NVIM_BASE16_PALETTE. Plain data: any other Neovim config can read the same file.
+--   Always a 16-colour base16 PALETTE (plain data, a small JSON file), turned
+--   into highlight groups by one renderer (mini.base16):
+--   * the one Stylix writes on a machine it themes -- found by itself;
+--   * or the file named by $NVIM_BASE16_PALETTE;
+--   * or, with neither, the built-in palette for the terminal's polarity
+--     (M.themes -> palettes/*.json).
+--   One mechanism with or without Nix: what you see here is what Stylix gives.
+--   (Measured: building the theme this way takes ~17 ms against ~26 ms for a
+--   full colour-scheme plugin; normal starts replay a cache and cost the same.)
 --
 -- Whatever supplies them, the same rules give the UI one consistent structure:
 --   1. Polarity follows the terminal. Neovim detects a dark or light terminal
@@ -29,26 +33,9 @@ local M = {}
 
 M.opts = { transparent = true }
 
---- Hand-tuned colour schemes, one per terminal polarity. `plugin` is the
---- lazy.nvim name (loaded only when the cache has to be rebuilt).
-M.themes = {
-  dark = {
-    name = 'catppuccin-mocha',
-    plugin = 'catppuccin',
-    load = function()
-      require('catppuccin').setup({ flavour = 'mocha' })
-      vim.cmd.colorscheme('catppuccin')
-    end,
-  },
-  light = {
-    name = 'catppuccin-latte',
-    plugin = 'catppuccin',
-    load = function()
-      require('catppuccin').setup({ flavour = 'latte' })
-      vim.cmd.colorscheme('catppuccin')
-    end,
-  },
-}
+--- The built-in palettes, one per terminal polarity: files in palettes/
+--- (official base16 schemes). Used when nothing outside supplies a palette.
+M.themes = { dark = 'catppuccin-mocha', light = 'catppuccin-latte' }
 
 --- Highlight groups that must stay visible (selection, search, current line, diffs).
 M.accents = { 'Visual', 'VisualNOS', 'CursorLine', 'CursorColumn', 'PmenuSel', 'PmenuThumb', 'Search', 'CurSearch',
@@ -191,7 +178,7 @@ end
 -- thrown away whenever plugins are updated. Bump CACHE_VERSION when the rules
 -- above change. The key is compared as plain text (hashing it cost 3.9 ms).
 --------------------------------------------------------------------------------
-local CACHE_VERSION = 6
+local CACHE_VERSION = 7
 local cache_dir = vim.fn.stdpath('cache') .. '/czernous-theme'
 
 local function cache_key(theme)
@@ -275,12 +262,14 @@ local function apply(theme)
 end
 
 --- The palette file supplied from outside, if any, and who supplies it:
----   1. $NVIM_BASE16_PALETTE (a path) -- explicit, for any setup;
+---   1. $NVIM_BASE16_PALETTE (a path) -- explicit, for any setup
+---      (the word `builtin` instead of a path: always the built-in palette);
 ---   2. the file Stylix writes on a machine it themes: stylix/palette.json in
 ---      the user's config folder (home-manager) or in /etc (NixOS).
 --- So with Stylix nothing has to be configured: Neovim follows the system palette.
 local function palette_source()
   local explicit = vim.env.NVIM_BASE16_PALETTE
+  if explicit == 'builtin' then return nil end -- "ignore Stylix, use the built-in palette" (the checks do)
   if explicit and explicit ~= '' then return explicit, '$NVIM_BASE16_PALETTE' end
   local config_home = vim.env.XDG_CONFIG_HOME
   if not config_home or config_home == '' then config_home = (vim.env.HOME or '') .. '/.config' end
@@ -301,13 +290,18 @@ local function pick()
       M.source = ('%s: %s'):format(who, path)
       return palette_theme(palette)
     end
-    vim.notify(('%s palette: %s; using the built-in theme'):format(who, err), vim.log.levels.WARN)
+    vim.notify(('%s palette: %s; using the built-in palette'):format(who, err), vim.log.levels.WARN)
   end
-  M.source = 'built-in theme'
   local variant = vim.o.background == 'light' and 'light' or 'dark'
-  local theme = M.themes[variant]
-  theme.variant = variant
-  return theme
+  local builtin = ('%s/palettes/%s.json'):format(vim.fn.stdpath('config'), M.themes[variant])
+  M.source = 'built-in palette: ' .. builtin
+  local palette, err = M.load_file(builtin)
+  if not palette then
+    -- apply() reports this and keeps Neovim's own colours
+    return { name = 'none', variant = variant, load = function() error(err, 0) end }
+  end
+  palette.variant = variant -- only a palette of the terminal's polarity is ever active
+  return palette_theme(palette)
 end
 
 function M.setup()
