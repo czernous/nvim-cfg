@@ -1,0 +1,22 @@
+CursorMovedI:
+   ___cmp___                                 13535 B
+   lualine_stl_refresh                        1642 B
+   matchparen                                  161 B
+BufEnter:
+   lualine                                    2663 B
+   wk                                         1712 B
+   lualine_stl_refresh                        1639 B
+   treesitter_context_update                   504 B
+   gitsigns                                    417 B
+   rhubarb                                     195 B
+CursorMoved:
+   lualine_stl_refresh                        1639 B
+   treesitter_context_update                   507 B
+   matchparen                                  161 B
+WinScrolled:
+   nvim.lsp.semantic_tokens:1                  770 B
+   treesitter_context_update                   504 B
+   matchparen                                  163 B
+TextChangedI:
+   ___cmp___                                   557 B
+   matchparen                                  160 B

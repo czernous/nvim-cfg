@@ -1,0 +1,162 @@
+# Keep everything on the newest versions, without ever breaking the config.
+#
+# Once a week (and by hand: Actions > update > Run workflow) this
+#   1. moves lazy-lock.json to the newest commit of every plugin
+#      (nix/update-plugins.lua, the same thing `nix run .#update-plugins` does)
+#      and flake.lock to the newest nixpkgs (`nix flake update`);
+#   2. puts that proposal on the branch `updates/auto`;
+#   3. runs checks.yml on it: the newest stable Neovim on plain Linux, and the
+#      Nix build;
+#   4. if everything passes, opens (or refreshes) a pull request -- merging it
+#      is the only manual step; if something fails, opens (or adds to) an issue
+#      saying what moved and which checks failed. Nothing reaches the main
+#      branch by itself.
+#
+# When nothing moved, the checks still run on the main branch: that is how a
+# new Neovim release gets tested against the config as it is.
+#
+# One-time repository setting for step 4's pull request: Settings > Actions >
+# General > "Allow GitHub Actions to create and approve pull requests". Without
+# it the job opens an issue with a link to create the pull request instead.
+name: update
+
+on:
+  schedule:
+    - cron: '17 5 * * 1' # Mondays 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      ref: ${{ steps.propose.outputs.ref }}
+      moved: ${{ steps.propose.outputs.moved }}
+    steps:
+      # The token that can push is not left in the checkout for later steps to
+      # find: only the push below is given it. The one action here that is not
+      # GitHub's own is pinned to an exact commit (.github/dependabot.yml
+      # proposes newer ones).
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          token: ${{ github.token }}
+      - uses: cachix/install-nix-action@2126ae7fc54c9df00dd18f7f18754393182c73cd # v31.9.1
+      - name: Move the lock files to the newest versions
+        id: propose
+        env:
+          PUSH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          nvim -l nix/update-plugins.lua > "$RUNNER_TEMP/plugins.txt" 2>&1; lookup=$?
+          nix flake update > "$RUNNER_TEMP/flake.txt" 2>&1; flake=$?
+          set -e
+          {
+            echo "Plugins:"
+            cat "$RUNNER_TEMP/plugins.txt"; echo
+            [ "$lookup" -eq 0 ] || echo "(some plugin repositories could not be asked; those plugins stayed where they were)"
+            if [ "$flake" -ne 0 ]; then
+              echo "nixpkgs: 'nix flake update' failed:"; tail -15 "$RUNNER_TEMP/flake.txt"
+            elif [ -n "$(git status --porcelain flake.lock)" ]; then
+              echo "nixpkgs: flake.lock moved to the newest nixos-unstable"
+            else
+              echo "nixpkgs: already the newest"
+            fi
+          } > "$RUNNER_TEMP/moved.txt"
+          cat "$RUNNER_TEMP/moved.txt"
+          { echo 'moved<<END_OF_MOVED'; cat "$RUNNER_TEMP/moved.txt"; echo 'END_OF_MOVED'; } >> "$GITHUB_OUTPUT"
+
+          git add -A lazy-lock.json flake.lock 2>/dev/null || git add -A lazy-lock.json
+          if git diff --cached --quiet; then
+            echo "Nothing moved: the checks will run on the main branch as it is."
+            echo "ref=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -q -m "chore: update plugins and nixpkgs to the newest versions"
+          git push --force "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/updates/auto
+          echo "ref=updates/auto" >> "$GITHUB_OUTPUT"
+
+  checks:
+    needs: propose
+    uses: ./.github/workflows/checks.yml
+    permissions:
+      contents: read
+    with:
+      ref: ${{ needs.propose.outputs.ref }}
+
+  report:
+    needs: [propose, checks]
+    if: always() && needs.propose.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      REF: ${{ needs.propose.outputs.ref }}
+      RESULT: ${{ needs.checks.result }}
+      MOVED: ${{ needs.propose.outputs.moved }}
+      LINUX: ${{ needs.checks.outputs.linux }}
+      NIX: ${{ needs.checks.outputs.nix }}
+      BASE: ${{ github.event.repository.default_branch }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Offer the update, or say what broke
+        run: |
+          body="$RUNNER_TEMP/body.md"
+          {
+            echo "### What moved"; echo '```'; echo "$MOVED"; echo '```'
+            echo "### Plain Linux, newest stable Neovim"; echo '```'; echo "${LINUX:-no result}"; echo '```'
+            echo "### Nix"; echo '```'; echo "${NIX:-no result}"; echo '```'
+            echo "Full logs: $RUN_URL"
+          } > "$body"
+
+          # one open issue per title: a repeat adds a comment instead of a new issue
+          issue() {
+            number=$(gh issue list --state open --search "in:title \"$1\"" --json number,title \
+              --jq "map(select(.title == \"$1\")) | .[0].number // empty")
+            if [ -n "$number" ]; then gh issue comment "$number" --body-file "$body"
+            else gh issue create --title "$1" --body-file "$body"; fi
+          }
+
+          if [ "$RESULT" = success ] && [ -n "$REF" ]; then
+            { echo; echo "Everything passed with these versions. Merging this adopts them."; } >> "$body"
+            number=$(gh pr list --head "$REF" --base "$BASE" --state open --json number --jq '.[0].number // empty')
+            if [ -n "$number" ]; then
+              gh pr edit "$number" --body-file "$body"
+            elif ! gh pr create --head "$REF" --base "$BASE" --title "Update plugins and nixpkgs (checks pass)" --body-file "$body"; then
+              # the repository does not let Actions open pull requests (see the top of this file)
+              { echo; echo "Could not open the pull request from here. Open it yourself:"
+                echo "$GITHUB_SERVER_URL/$GH_REPO/compare/$BASE...$REF?expand=1"; } >> "$body"
+              issue "Update ready: plugins and nixpkgs (checks pass)"
+            fi
+          elif [ "$RESULT" = success ]; then
+            echo "Nothing to update, and the checks pass on $BASE."
+          elif [ -n "$REF" ]; then
+            { echo
+              echo "The proposal is on the branch \`$REF\` and was **not** offered for merging."
+              echo "To look at it: \`git fetch origin && git checkout $REF && ./tests/check.sh\`."
+              echo "To find the plugin responsible, put one plugin's old commit back in \`lazy-lock.json\`,"
+              echo "run \`:Lazy restore\` and the checks again; the links above show what each plugin changed."
+              echo "The next run tries again with whatever is newest then."; } >> "$body"
+            issue "Automatic update failed its checks"
+            exit 1
+          else
+            { echo
+              echo "Nothing was updated, so this is \`$BASE\` as it is, failing with the newest stable Neovim"
+              echo "(or the newest tools on the runner). The Neovim version is in the first line above."; } >> "$body"
+            issue "Checks fail on the main branch"
+            exit 1
+          fi

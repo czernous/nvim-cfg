@@ -1,0 +1,8 @@
+# The actions used by .github/workflows/ are pinned (the third-party one to an
+# exact commit). This asks GitHub to propose newer ones, weekly, as pull requests.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

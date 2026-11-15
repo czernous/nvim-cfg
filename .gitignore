@@ -1,0 +1,4 @@
+.superpowers/
+tests/fixtures/**/target/
+tests/fixtures/**/obj/
+tests/fixtures/**/bin/

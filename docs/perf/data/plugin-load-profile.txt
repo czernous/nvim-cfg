@@ -1,0 +1,31 @@
+nvim-cmp                           21.27 ms  start
+lualine.nvim                        5.75 ms  start
+nvim-lspconfig                      5.44 ms  start
+telescope.nvim                      3.80 ms  start
+fidget.nvim                         3.68 ms  nvim-lspconfig
+harpoon                             3.62 ms  start
+lazy.nvim                           2.97 ms  init.lua
+LuaSnip                             2.50 ms  nvim-cmp
+gitsigns.nvim                       1.87 ms  start
+mason.nvim                          1.52 ms  nvim-lspconfig
+vim-fugitive                        1.38 ms  start
+nvim-treesitter                     1.21 ms  start
+onedark                             0.49 ms  start
+nvim-treesitter-context             0.41 ms  start
+vim-sleuth                          0.35 ms  start
+telescope-fzf-native.nvim           0.27 ms  telescope.nvim
+undotree                            0.26 ms  start
+plenary.nvim                        0.17 ms  harpoon
+nvim-treesitter-textobjects         0.17 ms  nvim-treesitter
+cmp-nvim-lsp                        0.15 ms  nvim-cmp
+vim-rhubarb                         0.14 ms  start
+friendly-snippets                   0.12 ms  nvim-cmp
+nvim-web-devicons                   0.11 ms  start
+neoformat                           0.10 ms  start
+cmp-path                            0.10 ms  nvim-cmp
+catppuccin                          0.05 ms  start
+cmp_luasnip                         0.03 ms  nvim-cmp
+which-key.nvim                     -1.00 ms  not loaded
+trouble.nvim                       -1.00 ms  not loaded
+lazydev.nvim                       -1.00 ms  not loaded
+lazy: 30 plugins, 27 loaded at startup, LazyDone 56.9 ms

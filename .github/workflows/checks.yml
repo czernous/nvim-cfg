@@ -1,0 +1,122 @@
+# The checks, on a machine that has never seen this config.
+#
+#   linux   plain Ubuntu: newest stable Neovim, plugins installed by lazy.nvim
+#           at the lazy-lock.json commits, then ./tests/check.sh and the tripwires.
+#   nix     the flake: evaluates it, builds the self-contained package and
+#           starts it. (Nix on an Ubuntu runner, not a NixOS machine.)
+#
+# Runs on every push, by hand (Actions > checks > Run workflow), and from
+# update.yml, which uses it to test a proposed update before offering it.
+name: checks
+
+on:
+  push:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Branch or commit to check (empty = the one that started the run)
+        type: string
+        default: ''
+    outputs:
+      linux:
+        description: What the checks said on plain Linux
+        value: ${{ jobs.linux.outputs.report }}
+      nix:
+        description: What the Nix build said
+        value: ${{ jobs.nix.outputs.report }}
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      report: ${{ steps.check.outputs.report }}
+    env:
+      # the config is checked out as ./nvim, so this makes it the user's config
+      XDG_CONFIG_HOME: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          path: nvim
+          persist-credentials: false
+      - uses: ./nvim/.github/actions/setup
+        with:
+          token: ${{ github.token }}
+      - name: Install the plugins at the lazy-lock.json commits
+        working-directory: nvim
+        run: nvim --headless "+Lazy! restore" +qa
+      - name: Build the syntax parsers
+        working-directory: nvim
+        # loading the plugin starts the installation of whatever is missing
+        # (lua/czernous/treesitter.lua); this waits until none is
+        run: |
+          nvim --headless "+lua local ts, want = require('nvim-treesitter'), require('czernous.treesitter').parsers; local function missing() local have = ts.get_installed(); return vim.tbl_filter(function(l) return not vim.tbl_contains(have, l) end, want) end; vim.wait(600000, function() return #missing() == 0 end, 500); io.stdout:write(('parsers missing: %d of %d\n'):format(#missing(), #want))" +qa
+      - name: Checks and tripwires
+        id: check
+        working-directory: nvim
+        run: |
+          set +e
+          ./tests/check.sh > "$RUNNER_TEMP/checks.txt" 2>&1; failed=$?
+          ./tests/check.sh --tripwires > "$RUNNER_TEMP/tripwires.txt" 2>&1; untripped=$?
+          set -e
+          {
+            echo "$(nvim --version | head -1)"
+            grep -a -E '^[0-9]+ passed, [0-9]+ failed' "$RUNNER_TEMP/checks.txt" || echo "the checks did not finish"
+            grep -a -E '^(FAIL|SKIP) ' "$RUNNER_TEMP/checks.txt" || true
+            echo "tripwires: $(grep -a -c '^TRIPPED' "$RUNNER_TEMP/tripwires.txt") tripped, $untripped not"
+            grep -a '^NOT TRIPPED' "$RUNNER_TEMP/tripwires.txt" || true
+          } > "$RUNNER_TEMP/report.txt"
+          cat "$RUNNER_TEMP/report.txt"
+          { echo '```'; cat "$RUNNER_TEMP/report.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo 'report<<END_OF_REPORT'; cat "$RUNNER_TEMP/report.txt"; echo 'END_OF_REPORT'; } >> "$GITHUB_OUTPUT"
+          if [ "$failed" -ne 0 ] || [ "$untripped" -ne 0 ]; then
+            # each failure also as an annotation: shown on the run's page without opening the log
+            { grep -a -h -E '^(FAIL |NOT TRIPPED)' "$RUNNER_TEMP/checks.txt" "$RUNNER_TEMP/tripwires.txt" || true; } | cut -c1-900 > "$RUNNER_TEMP/failures.txt"
+            while IFS= read -r line; do echo "::error title=check failed::$line"; done < "$RUNNER_TEMP/failures.txt"
+            # nothing recognisable failed, yet the run did: show how it ended
+            [ -s "$RUNNER_TEMP/failures.txt" ] \
+              || echo "::error title=checks ended badly (exit $failed, tripwires $untripped)::$(tail -c 900 "$RUNNER_TEMP/checks.txt" | tr '\n' ' ')"
+            echo "::group::Full output"; cat "$RUNNER_TEMP/checks.txt" "$RUNNER_TEMP/tripwires.txt"; echo "::endgroup::"
+            exit 1
+          fi
+
+  nix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      report: ${{ steps.build.outputs.report }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: cachix/install-nix-action@2126ae7fc54c9df00dd18f7f18754393182c73cd # v31.9.1
+      - name: Evaluate, build and start the package
+        id: build
+        run: |
+          set +e
+          {
+            nix flake check --print-build-logs &&
+            nix build .#neovim --print-build-logs &&
+            # every plugin in lazy-lock.json must be known to the built editor
+            want=$(jq length lazy-lock.json) &&
+            got=$(./result/bin/nvim --headless "+lua io.stdout:write(tostring(#require('lazy').plugins()))" +qa) &&
+            echo "plugins: $got loaded from the store, $want in lazy-lock.json" &&
+            [ "$got" = "$want" ]
+          } > "$RUNNER_TEMP/nix.txt" 2>&1; failed=$?
+          set -e
+          cat "$RUNNER_TEMP/nix.txt"
+          if [ "$failed" -eq 0 ]; then
+            tail -1 "$RUNNER_TEMP/nix.txt" > "$RUNNER_TEMP/report.txt"
+          else
+            { echo "the Nix build failed; last lines:"; tail -25 "$RUNNER_TEMP/nix.txt"; } > "$RUNNER_TEMP/report.txt"
+            echo "::error title=Nix build failed::$(grep -a -m3 -i 'error' "$RUNNER_TEMP/nix.txt" | tr '\n' ' ' | cut -c1-900)"
+          fi
+          { echo '```'; cat "$RUNNER_TEMP/report.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo 'report<<END_OF_REPORT'; cat "$RUNNER_TEMP/report.txt"; echo 'END_OF_REPORT'; } >> "$GITHUB_OUTPUT"
+          exit "$failed"

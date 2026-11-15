@@ -1,0 +1,53 @@
+# What a plain Linux machine needs before this config can be checked: the
+# newest stable Neovim and the few programs the config calls. No versions are
+# named: every run takes the newest release of each, so a new Neovim (or
+# tree-sitter, or Lua language server) is tested as soon as it exists.
+name: Set up Neovim and tools
+description: Newest stable Neovim, ripgrep, fd, the tree-sitter CLI and the Lua language server
+inputs:
+  token:
+    description: Token for downloading release files from GitHub
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Newest stable Neovim
+      shell: bash
+      run: |
+        mkdir -p "$RUNNER_TEMP/nvim"
+        # releases/latest is the newest stable release (never a nightly)
+        curl -fsSL https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz \
+          | tar xz --strip-components=1 -C "$RUNNER_TEMP/nvim"
+        echo "$RUNNER_TEMP/nvim/bin" >> "$GITHUB_PATH"
+    - name: ripgrep and fd
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq ripgrep fd-find
+        mkdir -p "$RUNNER_TEMP/bin"
+        ln -sf "$(command -v fdfind)" "$RUNNER_TEMP/bin/fd"   # Ubuntu's name for fd
+        echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+    - name: tree-sitter CLI (builds the syntax parsers)
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        gh release download --repo tree-sitter/tree-sitter --pattern 'tree-sitter-linux-x64.gz' --dir "$RUNNER_TEMP"
+        gunzip -c "$RUNNER_TEMP/tree-sitter-linux-x64.gz" > "$RUNNER_TEMP/bin/tree-sitter"
+        chmod +x "$RUNNER_TEMP/bin/tree-sitter"
+    - name: Lua language server (so the checks that need a real server run)
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        mkdir -p "$RUNNER_TEMP/luals"
+        gh release download --repo LuaLS/lua-language-server --pattern '*-linux-x64.tar.gz' --dir "$RUNNER_TEMP"
+        tar xzf "$RUNNER_TEMP"/lua-language-server-*-linux-x64.tar.gz -C "$RUNNER_TEMP/luals"
+        echo "$RUNNER_TEMP/luals/bin" >> "$GITHUB_PATH"
+    - name: Versions
+      shell: bash
+      run: |
+        nvim --version | head -1
+        rg --version | head -1
+        tree-sitter --version
+        lua-language-server --version

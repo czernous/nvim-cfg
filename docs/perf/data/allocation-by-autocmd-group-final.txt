@@ -1,0 +1,17 @@
+CursorMovedI:
+   matchparen                                  162 B
+TextChangedI:
+   matchparen                                  162 B
+InsertCharPre:
+CursorMoved:
+   treesitter_context_update                   508 B
+   matchparen                                  160 B
+WinScrolled:
+   nvim.lsp.semantic_tokens:1                  791 B
+   treesitter_context_update                   512 B
+   matchparen                                  162 B
+BufEnter:
+   wk                                         1700 B
+   treesitter_context_update                   504 B
+   gitsigns                                    417 B
+   czernous_statusline                         416 B
