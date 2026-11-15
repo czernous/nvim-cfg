@@ -127,12 +127,31 @@ Adjusting:
 
 | Key | Does |
 |---|---|
-| `Space t p` / `Space t P` | next / previous built-in palette (remembered) |
+| `Space t p` / `Space t P` | next / previous built-in palette (remembered; a palette with a light or dark counterpart selects that too) |
 | `Space t s` | softer / stronger: fades all text colours towards the background by 0, 10, 20 or 30 % (remembered; default 20 %; never below a readable 6:1) |
 | `Space t T` | transparent background on / off |
 
+Built-in palettes (all official base16 schemes, unchanged):
+
+| Dark | Its light counterpart |
+|---|---|
+| Catppuccin Mocha (default), Macchiato, Frappé | Catppuccin Latte |
+| Rosé Pine, Rosé Pine Moon | Rosé Pine Dawn |
+| One Dark | One Light |
+| Ayu Mirage | Ayu Light |
+| Tokyo Night Moon, Tokyo Night Storm | Tokyo Night Light |
+| Tokyo City Dark | Tokyo City Light |
+| Tomorrow Night | Tomorrow |
+| Nightfox | Dayfox |
+| 0x96f, Apprentice, Ashes, Blueish, Jabuti, Mission Brogue, Material, Material Palenight, OceanicNext | none published |
+
+On a light terminal only light palettes are used, on a dark one only dark ones. Picking
+a palette on the left also selects its counterpart for the other kind of terminal, so
+the same theme follows the terminal. A palette without a counterpart leaves the other
+choice as it was.
+
 **Your own theme**: put a JSON file in `palettes/` (copy any of them: a `name`,
-`"variant": "dark"` or `"light"`, and `base00` … `base0F`) and it appears under
+`"variant": "dark"` or `"light"`, optionally `"pair"` naming its counterpart, and `base00` … `base0F`) and it appears under
 `Space t p`; or point `$NVIM_BASE16_PALETTE` at a file anywhere. Thousands of
 ready-made schemes: <https://github.com/tinted-theming/schemes> (the `base16`
 folder). To change the default palette or softness for everyone, edit `M.themes`

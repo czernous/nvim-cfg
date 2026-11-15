@@ -1,6 +1,7 @@
 {
   "name": "ayu-mirage",
   "variant": "dark",
+  "pair": "ayu-light",
   "source": "base16 Ayu Mirage (Tinted Theming, Ayu Theme), tinted-theming/schemes",
   "base00": "#1f2430", "base01": "#242936", "base02": "#323844", "base03": "#4a5059",
   "base04": "#707a8c", "base05": "#cccac2", "base06": "#d9d7ce", "base07": "#f3f4f5",

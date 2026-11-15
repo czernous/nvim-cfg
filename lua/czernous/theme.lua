@@ -213,6 +213,15 @@ local function muted(palette) -- (aims a little above 3.5: colours are whole num
   end
   for share = 0.35, 1, 0.05 do
     local colour = mix(palette.base05, palette.base00, share)
+    local c = contrast(colour, palette.base00)
+    if c >= 3.6 and c <= ceiling then return colour end
+    if c > ceiling then break end
+  end
+  -- A palette whose text is itself dim (Tokyo Night Moon: 4.6:1) leaves only a
+  -- narrow band between "readable" and "quieter than the text": look for it
+  -- in finer steps, and let it reach up to 0.8 of the text's contrast.
+  for share = 0.35, 1, 0.01 do
+    local colour = mix(palette.base05, palette.base00, share)
     if contrast(colour, palette.base00) >= 3.6 then return colour end
   end
   return palette.base05
@@ -280,7 +289,7 @@ end
 -- thrown away whenever plugins are updated. Bump CACHE_VERSION when the rules
 -- above change. The key is compared as plain text (hashing it cost 3.9 ms).
 --------------------------------------------------------------------------------
-local CACHE_VERSION = 13
+local CACHE_VERSION = 14
 local cache_dir = vim.fn.stdpath('cache') .. '/czernous-theme'
 
 local function cache_key(theme)
@@ -533,10 +542,19 @@ function M.next_palette(step)
   at = (at - 1 + step) % #names + 1
   local choice = chosen()
   choice[variant] = names[at]
+  -- A palette can name its counterpart of the other polarity ("pair": Rosé
+  -- Pine -> Rosé Pine Dawn). Choosing one chooses both, so the same theme
+  -- follows the terminal from dark to light and back.
+  local other = variant == 'dark' and 'light' or 'dark'
+  local picked = M.load_file(('%s/palettes/%s.json'):format(config_root(), names[at]))
+  local pair = picked and type(picked.pair) == 'string' and picked.pair or nil
+  local counterpart = pair and M.load_file(('%s/palettes/%s.json'):format(config_root(), pair))
+  if counterpart and counterpart.variant == other then choice[other] = pair else pair = nil end
   vim.fn.mkdir(vim.fn.fnamemodify(choice_file, ':h'), 'p')
   vim.fn.writefile({ vim.json.encode(choice) }, choice_file)
   apply(pick())
-  vim.notify(('Palette: %s (%d of %d)'):format(names[at], at, #names))
+  vim.notify(('Palette: %s (%d of %d)%s'):format(names[at], at, #names,
+    pair and (' -- on a %s terminal: %s'):format(other, pair) or ''))
   return true
 end
 

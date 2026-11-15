@@ -776,6 +776,34 @@ end)
 -- <leader>tp / <leader>tP step through the built-in palettes of the terminal's
 -- polarity; the choice is remembered. With a palette supplied from outside
 -- (Stylix) there is nothing to choose and it says so.
+-- A palette's "pair" is its counterpart of the other polarity. Every pair
+-- must exist and be of the other polarity, and choosing a palette must choose
+-- its pair too (so one theme follows the terminal between dark and light).
+check.global('palette_pairs_follow_the_terminal', function()
+  local theme, bad, pairs_seen = require('czernous.theme'), {}, 0
+  for _, file in ipairs(vim.fn.globpath(root .. '/palettes', '*.json', false, true)) do
+    local palette = assert(theme.load_file(file))
+    if palette.pair then
+      pairs_seen = pairs_seen + 1
+      local other = theme.load_file(root .. '/palettes/' .. palette.pair .. '.json')
+      if not other then bad[#bad + 1] = palette.name .. ': pair ' .. palette.pair .. ' does not exist'
+      elseif other.variant == palette.variant then bad[#bad + 1] = palette.name .. ': pair ' .. palette.pair .. ' is also ' .. other.variant end
+    end
+  end
+  local state = vim.fn.tempname()
+  local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd',
+    "autocmd VimEnter * ++once lua local t = require('czernous.theme') for _ = 1, 60 do t.next_palette(1) if t.current.palette.pair then break end end io.stdout:write('PICKED=' .. t.current.palette.name .. ' PAIR=' .. tostring(t.current.palette.pair) .. ' ') vim.cmd('qa!')" },
+    { text = true, cwd = root, env = { NVIM_BASE16_PALETTE = 'builtin', XDG_STATE_HOME = state, XDG_CACHE_HOME = state .. '/cache' } }):wait(30000)
+  local out = (r.stdout or '') .. (r.stderr or '')
+  local picked, pair = out:match('PICKED=(%S+) PAIR=(%S+)')
+  local saved = vim.fn.glob(state .. '/*/czernous-palettes.json')
+  local ok, choice = pcall(function() return vim.json.decode(table.concat(vim.fn.readfile(saved), '')) end)
+  if not (picked and ok and choice.dark == picked and choice.light == pair) then
+    bad[#bad + 1] = ('choosing %s (pair %s) remembered %s'):format(tostring(picked), tostring(pair), ok and vim.inspect(choice):gsub('%s+', ' ') or 'nothing')
+  end
+  return #bad == 0 and pairs_seen >= 6, ('%d pairs; %s'):format(pairs_seen, table.concat(bad, ' | '))
+end)
+
 check.global('palettes_can_be_tried', function()
   local keys = {}
   for _, k in ipairs(require('czernous.keymaps').all()) do keys[k.lhs] = true end

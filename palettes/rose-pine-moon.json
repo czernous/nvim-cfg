@@ -1,6 +1,7 @@
 {
   "name": "rose-pine-moon",
   "variant": "dark",
+  "pair": "rose-pine-dawn",
   "source": "base16 Rosé Pine Moon (Emilia Dunfelt), tinted-theming/schemes",
   "base00": "#232136", "base01": "#2a273f", "base02": "#393552", "base03": "#6e6a86",
   "base04": "#908caa", "base05": "#e0def4", "base06": "#e0def4", "base07": "#56526e",

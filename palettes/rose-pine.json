@@ -1,6 +1,7 @@
 {
   "name": "rose-pine",
   "variant": "dark",
+  "pair": "rose-pine-dawn",
   "source": "base16 Rosé Pine (Emilia Dunfelt), tinted-theming/schemes",
   "base00": "#191724", "base01": "#1f1d2e", "base02": "#26233a", "base03": "#6e6a86",
   "base04": "#908caa", "base05": "#e0def4", "base06": "#e0def4", "base07": "#524f67",

@@ -1,6 +1,7 @@
 {
   "name": "nightfox",
   "variant": "dark",
+  "pair": "dayfox",
   "source": "base16 nightfox (EdenEast), tinted-theming/schemes",
   "base00": "#192330", "base01": "#212e3f", "base02": "#29394f", "base03": "#575860",
   "base04": "#71839b", "base05": "#cdcecf", "base06": "#aeafb0", "base07": "#e4e4e5",
