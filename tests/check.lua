@@ -308,7 +308,8 @@ check.global('direct_open_attaches', function()
   }, probe)
   -- Minimal PATH so the background lookup finishes BEFORE startup does (the race).
   local nvim_dir = vim.fn.fnamemodify(vim.v.progpath, ':h')
-  local env = { PATH = nvim_dir .. ':/usr/bin:/bin' }
+  local server_dir = vim.fn.fnamemodify(vim.fn.exepath('lua-language-server'), ':h')
+  local env = { PATH = nvim_dir .. ':' .. server_dir .. ':/usr/bin:/bin' }
   -- `-c vim.wait` = something processing events during startup (e.g. a plugin waiting).
   local r = vim.system({ vim.v.progpath, '--headless', '--cmd', 'luafile ' .. probe, '-c', 'lua vim.wait(2000)', fixtures .. '/lua/init.lua' },
     { text = true, env = env }):wait(40000)
@@ -1701,8 +1702,21 @@ end)
 -- :checkhealth czernous lists the system tools the config relies on, so a new
 -- machine can be checked at a glance.
 check.global('health_lists_tools', function()
-  -- a PATH without ripgrep (but with everything else)
-  local dirs = vim.tbl_filter(function(d) return vim.fn.executable(d .. '/rg') == 0 end, vim.split(vim.env.PATH, ':', { plain = true }))
+  -- a PATH without ripgrep but with everything else. Where rg shares a folder
+  -- with other programs (/usr/bin on most distributions) that folder is
+  -- replaced by a copy made of links to everything in it except rg.
+  local dirs = {}
+  for _, d in ipairs(vim.split(vim.env.PATH, ':', { plain = true })) do
+    if vim.fn.executable(d .. '/rg') == 1 then
+      local shadow = vim.fn.tempname()
+      vim.fn.mkdir(shadow, 'p')
+      for name in vim.fs.dir(d) do
+        if name ~= 'rg' then vim.uv.fs_symlink(d .. '/' .. name, shadow .. '/' .. name) end
+      end
+      d = shadow
+    end
+    dirs[#dirs + 1] = d
+  end
   local out = vim.system({ vim.v.progpath, '--headless', '-n', '-c', 'checkhealth czernous',
     '-c', "lua io.stdout:write(table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '\\n'))", '-c', 'qa!' },
     { text = true, cwd = root, env = { PATH = table.concat(dirs, ':') } }):wait(40000)
