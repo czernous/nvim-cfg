@@ -39,7 +39,7 @@ jobs:
       # the config is checked out as ./nvim, so this makes it the user's config
       XDG_CONFIG_HOME: ${{ github.workspace }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
           path: nvim
@@ -91,7 +91,7 @@ jobs:
     outputs:
       report: ${{ steps.build.outputs.report }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
