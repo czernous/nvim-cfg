@@ -1,7 +1,7 @@
 -- "Which project is this file in?" Used by the search keys (<leader>pf, pg, ps)
 -- so they search the current file's project, not wherever Neovim was started.
 --
--- Checked in order (first tier that matches anywhere above the file wins):
+-- Checked in order, within the nearest Git repository when present:
 --   1. multi-module roots: Gradle settings/gradlew, go.work, Cargo.lock, *.sln
 --   2. nearest single project: go.mod, Cargo.toml, package.json, *.csproj, ...
 --   3. the git repository root
@@ -34,9 +34,12 @@ local tiers = {
 function M.root(buf)
   buf = buf or 0
   if vim.bo[buf].buftype == '' and vim.api.nvim_buf_get_name(buf) ~= '' then
+    local path = vim.api.nvim_buf_get_name(buf)
+    local repository = vim.fs.root(buf, '.git')
+    local stop = repository and vim.fs.dirname(repository) or nil
     for _, marker in ipairs(tiers) do
-      local found = vim.fs.root(buf, marker)
-      if found then return found end
+      local found = vim.fs.find(marker, { path = path, upward = true, stop = stop })[1]
+      if found then return vim.fs.dirname(found) end
     end
   end
   return vim.fn.getcwd()

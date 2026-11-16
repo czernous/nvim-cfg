@@ -41,6 +41,11 @@ end
 local function git_part(buf)
   local head = vim.b[buf].gitsigns_head
   if not head or head == '' then return '' end
+  -- Bound branch text before escaping statusline syntax; preserve filename space.
+  local limit = math.max(8, math.min(24, math.floor(vim.o.columns / 4)))
+  if vim.fn.strdisplaywidth(head) > limit then
+    head = vim.fn.strcharpart(head, 0, limit - 3) .. '...'
+  end
   -- plain text, so it reads as a branch (not part of the path) in any font
   return ('   %%#CzStlDim#git:%s%%#CzStlText#'):format(literal(head))
 end
@@ -133,7 +138,7 @@ function M.setup()
     end)
   end
   local group = vim.api.nvim_create_augroup('czernous_statusline', { clear = true })
-  vim.api.nvim_create_autocmd({ 'ModeChanged', 'BufEnter', 'WinEnter', 'DiagnosticChanged', 'FileType', 'TermOpen' }, {
+  vim.api.nvim_create_autocmd({ 'ModeChanged', 'BufEnter', 'WinEnter', 'VimResized', 'DiagnosticChanged', 'FileType', 'TermOpen' }, {
     group = group,
     desc = 'Refresh the statusline text',
     callback = refresh,

@@ -1,7 +1,7 @@
 # What a plain Linux machine needs before this config can be checked: the
 # newest stable Neovim and the few programs the config calls. No versions are
-# named: every run takes the newest release of each, so a new Neovim (or
-# tree-sitter, or Lua language server) is tested as soon as it exists.
+# named for the canary tools: new Neovim/tree-sitter/LuaLS releases are tested.
+# Pyright is pinned separately as the semantic Python hover prerequisite.
 name: Set up Neovim and tools
 description: Newest stable Neovim, ripgrep, fd, the tree-sitter CLI and the Lua language server
 inputs:
@@ -44,6 +44,12 @@ runs:
         gh release download --repo LuaLS/lua-language-server --pattern '*-linux-x64.tar.gz' --dir "$RUNNER_TEMP"
         tar xzf "$RUNNER_TEMP"/lua-language-server-*-linux-x64.tar.gz -C "$RUNNER_TEMP/luals"
         echo "$RUNNER_TEMP/luals/bin" >> "$GITHUB_PATH"
+    - name: Python semantic server (hover regression prerequisite)
+      shell: bash
+      run: |
+        npm install --prefix "$RUNNER_TEMP/pyright" --ignore-scripts --no-audit --no-fund pyright@1.1.407
+        echo "$RUNNER_TEMP/pyright/node_modules/.bin" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/pyright/node_modules/.bin/pyright" --version
     - name: Versions
       shell: bash
       run: |

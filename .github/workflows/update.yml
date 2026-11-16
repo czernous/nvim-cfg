@@ -46,7 +46,7 @@ jobs:
       # find: only the push below is given it. The one action here that is not
       # GitHub's own is pinned to an exact commit (.github/dependabot.yml
       # proposes newer ones).
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
