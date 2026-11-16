@@ -16,6 +16,7 @@ M.parsers = {
   'markdown_inline', 'python', 'query', 'regex', 'sql', 'toml', 'vim', 'vimdoc', 'yaml',
 }
 
+local auto_install = vim.env.NVIM_TS_AUTO_INSTALL ~= '0'
 local pending = {} -- languages currently being installed
 local managed = {} -- parser/query bundles installed by this plugin
 local reported = {}
@@ -49,6 +50,7 @@ end
 --- Install a missing parser for `lang` (if possible), then start treesitter in `buf`.
 local function install_then_start(lang, buf)
   if pending[lang] then return true end
+  if not auto_install then return false end
   local nts = require('nvim-treesitter')
   if not vim.tbl_contains(nts.get_available(), lang) then
     report_once('unsupported:' .. lang, 'No configured syntax parser for ' .. lang .. '; syntax highlighting is unavailable.')
@@ -77,7 +79,7 @@ function M.setup()
   local installed = nts.get_installed()
   for _, lang in ipairs(installed) do managed[lang] = true end
   local missing = vim.tbl_filter(function(l) return not vim.tbl_contains(installed, l) end, M.parsers)
-  if #missing > 0 and cli() then nts.install(missing) end
+  if auto_install and #missing > 0 and cli() then nts.install(missing) end
 
   vim.api.nvim_create_autocmd('FileType', {
     group = vim.api.nvim_create_augroup('czernous_treesitter', { clear = true }),
@@ -90,6 +92,8 @@ function M.setup()
       if install_then_start(lang, ev.buf) then return end
       if vim.treesitter.language.add(lang) then
         start(ev.buf)
+      elseif not auto_install then
+        report_once('disabled:' .. lang, 'Syntax parser for ' .. lang .. ' is missing; automatic downloads are disabled. Use :TSInstall ' .. lang .. ' or provision its parser/query bundle.')
       else
         install_then_start(lang, ev.buf)
       end

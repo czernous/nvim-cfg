@@ -137,3 +137,28 @@ addition. Backups of source files before work are in the snapshot's .config/nvim
 Next: diagnose project root selection and isolate the real Delve launch failure
 with retained DAP logs. Establish parser installation prerequisites separately;
 do not upgrade all plugins or replace project toolchains to obtain green checks.
+
+## CI follow-up — 2026-11-16
+
+PR #4's Ubuntu Linux job failed its mandatory Python hover regression because
+setup supplied LuaLS but no Pyright. Setup now installs Pyright 1.1.407 explicitly;
+the same installation passed the local hover regression. This is a test prerequisite,
+not a global project SDK replacement. Parser restore now disables implicit downloads
+and runs one explicit, failure-propagating provisioning step. A public-process
+regression proves the opt-out preserves existing highlighting without installing.
+
+Local Go debug verification exposed an async nvim-dap statusline race: stopped
+events can yield before frame state is ready. Refresh again after the scopes
+response, without polling. The existing breakpoint/statusline assertion failed
+before and passed after. A separate invalid /tmp/.git marker interfered with Go's
+VCS stamping; tests used a clean private TMPDIR rather than changing Git or
+disabling VCS checks. Full Arch suite: 147 passed, 0 failed, 1 skipped; all twelve
+tripwires detected their intended violations. Explicit provisioning verified all
+31 configured parsers and download-opt-out regression passed. The remaining skip
+is the already-installed vtsls installation scenario. Hosted CI awaits rerun;
+these local results do not establish Ubuntu/WSL or clean offline provisioning.
+
+Rollback: CI follow-up originals are in the private recovery ci-20261116-104141
+snapshot. Restore individual affected files after preserving subsequent changes,
+and move the two added parser test scripts aside if reverting the workflow.
+Untracked nvim.log was preserved and excluded.

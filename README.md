@@ -108,6 +108,9 @@ Project-local server discovery and environment changes after startup are not yet
   the repository boundary, then the installed Mason Astro bundle. A missing
   explicit SDK stops Astro with guidance. Full declared-version enforcement
   across toolchains remains future work.
+- Set `NVIM_TS_AUTO_INSTALL=0` to disable automatic parser downloads while retaining
+  existing local syntax. Provision explicitly with `:TSInstall` or the bootstrap
+  command `NVIM_TS_AUTO_INSTALL=0 nvim --headless "+luafile tests/install-parsers.lua"`.
 - Syntax support installs parser/query bundles from the locked Tree-sitter plugin;
   first use can require network access, the Tree-sitter CLI and a C compiler.
   Highlighting and semantic language support are separate capabilities.
