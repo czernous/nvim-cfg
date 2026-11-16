@@ -48,14 +48,21 @@ jobs:
         with:
           token: ${{ github.token }}
       - name: Install the plugins at the lazy-lock.json commits
+        env:
+          NVIM_TS_AUTO_INSTALL: '0'
         working-directory: nvim
         run: nvim --headless "+Lazy! restore" +qa
       - name: Build the syntax parsers
+        env:
+          NVIM_TS_AUTO_INSTALL: '0'
         working-directory: nvim
-        # loading the plugin starts the installation of whatever is missing
-        # (lua/czernous/treesitter.lua); this waits until none is
-        run: |
-          nvim --headless "+lua local ts, want = require('nvim-treesitter'), require('czernous.treesitter').parsers; local function missing() local have = ts.get_installed(); return vim.tbl_filter(function(l) return not vim.tbl_contains(have, l) end, want) end; vim.wait(600000, function() return #missing() == 0 end, 500); io.stdout:write(('parsers missing: %d of %d\n'):format(#missing(), #want))" +qa
+        # One explicit owner: plugin restore must not leave concurrent installs.
+        run: nvim --headless -n -i NONE "+luafile tests/install-parsers.lua"
+      - name: Parser download opt-out
+        env:
+          NVIM_TS_AUTO_INSTALL: '0'
+        working-directory: nvim
+        run: nvim --headless -n -i NONE "+luafile tests/treesitter-provisioning.lua"
       - name: Checks and tripwires
         id: check
         working-directory: nvim

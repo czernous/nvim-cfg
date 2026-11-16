@@ -372,6 +372,8 @@ check.global('broken_server_is_quiet', function()
   local warns = 0
   local n = vim.notify
   vim.notify = function(m, l, o) if l == vim.log.levels.WARN then warns = warns + 1 end return n(m, l, o) end
+  -- This check isolates server lifecycle; use known syntax for its fake filetype.
+  vim.treesitter.language.register('lua', 'czfake')
   vim.lsp.config('fake_ls', { cmd = { 'fake-ls' }, filetypes = { 'czfake' } })
   vim.lsp.enable('fake_ls')
   -- Several buffers: a dead server must not be restarted (and warn) for each one.
@@ -928,7 +930,26 @@ check.global('project_root_nearest', function()
   vim.fn.writefile({ '' }, dir .. '/settings.gradle.kts')
   vim.fn.writefile({ '' }, dir .. '/mod/build.gradle.kts')
   vim.fn.writefile({ 'class A {}' }, dir .. '/mod/src/main/java/A.java')
+  -- Parent tooling must not capture a nested repository. A worktree's .git
+  -- file is a boundary too; workspace markers inside the repo still win.
+  local boundary = vim.fn.tempname()
+  vim.fn.mkdir(boundary .. '/repo/module/src', 'p')
+  vim.fn.mkdir(boundary .. '/repo/.git', 'p')
+  vim.fn.writefile({ '{}' }, boundary .. '/package.json')
+  vim.fn.writefile({ '' }, boundary .. '/settings.gradle.kts')
+  vim.fn.writefile({ '' }, boundary .. '/repo/module/src/a.lua')
+  vim.fn.mkdir(boundary .. '/worktree/src', 'p')
+  vim.fn.writefile({ 'gitdir: /unused-test-gitdir' }, boundary .. '/worktree/.git')
+  vim.fn.writefile({ '' }, boundary .. '/worktree/src/a.lua')
+  vim.fn.mkdir(boundary .. '/workspace/module/src', 'p')
+  vim.fn.mkdir(boundary .. '/workspace/.git', 'p')
+  vim.fn.writefile({ '' }, boundary .. '/workspace/settings.gradle.kts')
+  vim.fn.writefile({ '' }, boundary .. '/workspace/module/build.gradle.kts')
+  vim.fn.writefile({ '' }, boundary .. '/workspace/module/src/a.lua')
   local cases = {
+    { boundary .. '/repo/module/src/a.lua', boundary .. '/repo' },
+    { boundary .. '/worktree/src/a.lua', boundary .. '/worktree' },
+    { boundary .. '/workspace/module/src/a.lua', boundary .. '/workspace' },
     { fixtures .. '/go/main.go', fixtures .. '/go' },
     { fixtures .. '/rust/src/main.rs', fixtures .. '/rust' },
     { fixtures .. '/csharp/Program.cs', fixtures .. '/csharp' },
@@ -937,8 +958,9 @@ check.global('project_root_nearest', function()
   }
   local bad = {}
   for _, c in ipairs(cases) do
-    vim.cmd('silent! %bwipeout!'); vim.cmd.edit(c[1])
-    local got = project.root(0)
+    -- Root selection needs a named buffer, not an LSP/filetype lifecycle.
+    local buf = vim.fn.bufadd(c[1])
+    local got = project.root(buf)
     if vim.fs.normalize(got) ~= vim.fs.normalize(c[2]) then bad[#bad + 1] = c[1] .. ' -> ' .. got end
   end
   return #bad == 0, table.concat(bad, ', ')
@@ -1342,6 +1364,26 @@ check.global('statusline_native', function()
   return ok ~= nil, 'rendered: [' .. text .. '] (want mode, file name, filetype, 2:4)'
 end)
 
+check.global('statusline_long_branch', function()
+  vim.cmd.edit(fixtures .. '/lua/init.lua')
+  local columns, head = vim.o.columns, vim.b.gitsigns_head
+  local ok, failure = xpcall(function()
+    for _, width in ipairs({ 80, 60 }) do
+      vim.o.columns = width
+      for _, branch in ipairs({ 'dependabot/github_actions/cachix/install-nix-action-31.11.5', 'feature/100%/long-branch-with-more-details' }) do
+        vim.b.gitsigns_head = branch
+        require('czernous.statusline').update()
+        local text = vim.api.nvim_eval_statusline(vim.o.statusline, { maxwidth = width }).str
+        assert(text:find('init.lua', 1, true), 'filename hidden: ' .. text)
+        assert(text:find('git:', 1, true), 'branch missing: ' .. text)
+      end
+    end
+  end, debug.traceback)
+  vim.o.columns, vim.b.gitsigns_head = columns, head
+  require('czernous.statusline').update()
+  return ok, failure or 'filename survives long branch at 60/80 columns'
+end)
+
 -- On a normal (cached-theme) start the statusline must already have its real
 -- colours: text = the theme's text colour, branch/filetype = its comment colour.
 check.global('statusline_colours_at_startup', function()
@@ -1439,6 +1481,38 @@ end)
 
 -- K shows documentation from the language server; with no server it must say so
 -- (naming the language) instead of failing silently.
+-- Ruff's hover capability documents noqa rules; Python symbols require a
+-- semantic server. Exercise the public K mapping and its resulting popup.
+check.global('python_hover_documents_symbol', function()
+  vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/python/main.py')
+  local buf = vim.api.nvim_get_current_buf()
+  local ready = vim.wait(15000, function()
+    for _, client in ipairs(vim.lsp.get_clients({ bufnr = buf, method = 'textDocument/completion' })) do
+      if client.initialized then return true end
+    end
+    return false
+  end, 50)
+  if not ready then return false, 'no semantic Python server attached (Ruff alone is insufficient)' end
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  vim.api.nvim_win_set_cursor(0, { #lines, assert(lines[#lines]:find('add(', 1, true)) - 1 })
+  local existing = {}
+  for _, win in ipairs(vim.api.nvim_list_wins()) do existing[win] = true end
+  vim.api.nvim_feedkeys(vim.keycode('K'), 'x', false)
+  local shown = vim.wait(10000, function()
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+      if not existing[win] and vim.api.nvim_win_get_config(win).relative ~= '' then
+        local text = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false), '\n')
+        if text:find('Python hover regression', 1, true) then return true end
+      end
+    end
+    return false
+  end, 50)
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if not existing[win] and vim.api.nvim_win_get_config(win).relative ~= '' then vim.api.nvim_win_close(win, true) end
+  end
+  return shown, 'K did not display the Python function documentation'
+end)
+
 check.global('hover_key_explains_missing_server', function()
   vim.cmd('silent! %bwipeout!'); vim.cmd('enew'); vim.bo.filetype = 'kotlin'
   if #vim.lsp.get_clients({ bufnr = 0 }) > 0 then return 'skip', 'a Kotlin language server is installed here' end
@@ -1984,6 +2058,8 @@ end)
 ---------------------------------------------------------------------------
 -- Language checks
 ---------------------------------------------------------------------------
+check.lang({ name = 'astro', file = fixtures .. '/astro/index.astro', server = 'astro', exe = 'astro-ls' })
+check.lang({ name = 'python', file = fixtures .. '/python/main.py', server = 'pyright', exe = 'pyright-langserver' })
 check.lang({ name = 'go', file = fixtures .. '/go/main.go', server = 'gopls', exe = 'gopls' })
 check.lang({ name = 'rust', file = fixtures .. '/rust/src/main.rs', server = 'rust_analyzer', exe = 'rust-analyzer', timeout_ms = 60000,
   probe = { 'rust-analyzer', '--version' } })
@@ -2132,7 +2208,14 @@ check.global('debug_without_adapter_says_what_is_missing', function()
   local ok, debug = pcall(require, 'czernous.debugging')
   if not ok then return false, 'no czernous.debugging module' end
   local old = vim.env.PATH
-  vim.env.PATH = table.concat(vim.tbl_filter(function(d) return vim.fn.executable(d .. '/dlv') == 0 end,
+  -- A packaged dlv may share /usr/bin with sh and git. Keep those dependencies
+  -- available while genuinely removing every dlv provider from the test PATH.
+  local bin = vim.fn.tempname(); vim.fn.mkdir(bin, 'p')
+  for _, program in ipairs({ 'sh', 'git', 'go' }) do
+    local where = vim.fn.exepath(program)
+    if where ~= '' then assert(vim.uv.fs_symlink(where, bin .. '/' .. program)) end
+  end
+  vim.env.PATH = bin .. ':' .. table.concat(vim.tbl_filter(function(d) return vim.fn.executable(d .. '/dlv') == 0 end,
     vim.split(old, ':', { plain = true })), ':')
   vim.cmd('silent! %bwipeout!'); vim.cmd.edit(fixtures .. '/go/main.go')
   local go, ok1, err1 = messages_from(debug.continue, function(texts) return #texts > 0 end)
@@ -2192,6 +2275,8 @@ check.global('debug_session_stops_at_breakpoint', function()
     pcall(debug.stop)
     return false, 'the program never stopped at the breakpoint'
   end
+  -- DAP listeners refresh the statusline on the next scheduled UI turn.
+  vim.wait(1000, function() return rendered_statusline():find('debug:stopped', 1, true) ~= nil end, 10)
   local line, during = s.current_frame.line, rendered_statusline()
   local value
   s:request('evaluate', { expression = 'sum', frameId = s.current_frame.id, context = 'hover' }, function(_, r) value = r and r.result or '?' end)
@@ -2534,6 +2619,13 @@ local function run_lang(spec)
   if not vim.treesitter.highlighter.active[buf] then
     return report('FAIL', name .. ':treesitter', 'no highlighter for ft=' .. vim.bo[buf].filetype)
   end
+  local lang = vim.treesitter.language.get_lang(vim.bo[buf].filetype)
+  local query = vim.treesitter.query.get(lang, 'highlights')
+  if not query then return report('FAIL', name .. ':treesitter', 'highlighter active but highlight queries missing') end
+  local captures = 0
+  local parser = assert(vim.treesitter.get_parser(buf, lang))
+  for _ in query:iter_captures(parser:parse()[1]:root(), buf) do captures = captures + 1 end
+  if captures == 0 then return report('FAIL', name .. ':treesitter', 'highlight queries produced no captures') end
   report('PASS', name .. ':treesitter')
 
   if vim.fn.executable(spec.exe) ~= 1 then

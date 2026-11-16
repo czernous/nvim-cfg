@@ -49,6 +49,8 @@ M.debuggers = {
           name = "Debug this file's package (its tests, from a _test.go file)",
           mode = function() return vim.api.nvim_buf_get_name(0):match('_test%.go$') and 'test' or 'debug' end,
           program = '${fileDirname}',
+          cwd = '${fileDirname}', -- debuggee working directory
+          dlvCwd = '${fileDirname}', -- Delve must build inside this module too
         },
       }
     end,
@@ -215,6 +217,9 @@ function M.setup()
   for _, event in ipairs({ 'event_initialized', 'event_stopped', 'event_continued', 'event_terminated', 'event_exited' }) do
     dap.listeners.after[event].czernous = refresh
   end
+  -- event_stopped can yield for thread/stack requests before state is ready.
+  -- A scopes response follows frame selection, so refresh from that boundary too.
+  dap.listeners.after.scopes.czernous = refresh
   dap.listeners.on_session.czernous = refresh
 end
 
