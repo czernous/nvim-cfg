@@ -26,6 +26,9 @@
 --   3. "The selected item" looks the same everywhere. Any group that marks a
 --      selection (its name ends in Sel, Selection or Selected: completion menu,
 --      picker, wildmenu, any plugin) gets the theme's own selection colour.
+--      That colour, and the search highlights, are seen and read in every
+--      palette: they stand out from the background (1.3:1) and the text on
+--      them is readable (4.5:1). See visible().
 --   5. Calm code: every text colour is softened a little (M.opts.soften),
 --      names are plain text, punctuation is muted, all keywords share one
 --      colour, strings / functions / types / constants keep theirs, comments
@@ -242,6 +245,81 @@ local keywords = { -- every kind of keyword: the one keyword colour
   'Statement', 'Keyword', 'Conditional', 'Repeat', 'Label', 'Exception', 'Include', 'Define', 'PreProc', 'PreCondit',
   'StorageClass', 'Structure', '@keyword.return',
 }
+-- What you select and what you searched for must be seen and read, whatever
+-- the palette. Some palettes put their selection shade (base02) so close to the
+-- background that a selection is barely there (Material Palenight: 1.16:1),
+-- others so close to the text that selected text is hard to read.
+local STANDS_OUT = 1.3 -- background of a selection / match against the editor's
+                       -- (Catppuccin's own selection shade sits right here)
+local READABLE = 4.5   -- text on it (WCAG AA for normal text)
+
+--- A text colour readable on `bg`: the first of `colours` that is, otherwise the
+--- one of them nearest to it, taken towards black or white just far enough.
+local function readable(bg, colours)
+  local extreme = contrast('#000000', bg) >= contrast('#ffffff', bg) and '#000000' or '#ffffff'
+  local best, best_ratio = colours[1], 0
+  for _, colour in ipairs(colours) do
+    local ratio = contrast(colour, bg)
+    if ratio >= READABLE then return colour end
+    -- only a colour on the readable side of the background can be taken further
+    local same_side = (luminance(colour) < luminance(bg)) == (extreme == '#000000')
+    if same_side and ratio > best_ratio then best, best_ratio = colour, ratio end
+  end
+  for share = 0.01, 1.0001, 0.01 do
+    local colour = mix(extreme, best, share)
+    if contrast(colour, bg) >= READABLE then return colour end
+  end
+  return extreme
+end
+
+--- The selection colour: the palette's own (base02) where it is both seen and
+--- read on, so most palettes look exactly as before. Otherwise:
+---   1. too close to the background: tinted towards the palette's accent (base0D)
+---      just far enough to stand out;
+---   2. text not readable on it: taken back towards the background as far as it
+---      can go while it still stands out (the code keeps its colours);
+---   3. still not readable (text that is itself dim, Material Palenight, Tokyo
+---      Night Moon): the selected text is brightened just enough.
+--- Returns the background and the text colour (nil: text keeps its own colours).
+local function selection(palette)
+  local bg, text, sel = palette.base00, palette.base05, palette.base02
+  if contrast(sel, bg) < STANDS_OUT then
+    for share = 0.01, 1.0001, 0.01 do
+      sel = mix(palette.base0D, palette.base02, share)
+      if contrast(sel, bg) >= STANDS_OUT then break end
+    end
+  end
+  if contrast(text, sel) < READABLE then
+    local from = sel
+    for share = 0.01, 1.0001, 0.01 do
+      local colour = mix(bg, from, share)
+      if contrast(colour, bg) < STANDS_OUT then break end
+      sel = colour
+      if contrast(text, sel) >= READABLE then break end
+    end
+  end
+  if contrast(text, sel) >= READABLE then return sel, nil end
+  return sel, readable(sel, { text })
+end
+
+local function visible(palette)
+  local function number(colour) return tonumber(colour:sub(2), 16) end
+  local sel, text = selection(palette)
+  vim.api.nvim_set_hl(0, 'Visual', { bg = number(sel), fg = text and number(text) or nil })
+  -- search matches: their accent background stays, the text on it is made readable
+  for _, name in ipairs({ 'Search', 'CurSearch', 'IncSearch', 'Substitute' }) do
+    local def = vim.api.nvim_get_hl(0, { name = name, link = false })
+    if def.bg and def.fg then
+      local bg, fg = ('#%06x'):format(def.bg), ('#%06x'):format(def.fg)
+      local want = readable(bg, { fg, palette.base00, palette.base05 })
+      if want ~= fg then
+        def.fg, def.ctermfg = number(want), nil
+        vim.api.nvim_set_hl(0, name, def)
+      end
+    end
+  end
+end
+
 local function calm(palette)
   local function number(colour) return tonumber(colour:sub(2), 16) end
   local function recolour(names, colour)
@@ -259,6 +337,7 @@ local function calm(palette)
   recolour(punctuation, muted(palette))
   -- the bracket matching the one under the cursor: unmistakable
   vim.api.nvim_set_hl(0, 'MatchParen', { fg = number(palette.base09), bg = number(palette.base02), bold = true })
+  visible(palette)
 end
 
 local function style()
@@ -289,7 +368,7 @@ end
 -- thrown away whenever plugins are updated. Bump CACHE_VERSION when the rules
 -- above change. The key is compared as plain text (hashing it cost 3.9 ms).
 --------------------------------------------------------------------------------
-local CACHE_VERSION = 14
+local CACHE_VERSION = 15
 local cache_dir = vim.fn.stdpath('cache') .. '/czernous-theme'
 
 local function cache_key(theme)
