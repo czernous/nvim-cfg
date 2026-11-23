@@ -775,6 +775,55 @@ check.global('code_colours_are_calm', function()
   return #bad == 0 and checked >= 4, ('%d palettes checked; %s'):format(checked, table.concat(bad, ' | '))
 end)
 
+-- What you select and what you searched for must be seen, and read, in every
+-- palette: the selection (Visual) background stands out from the editor's
+-- background (1.3:1 or more), the search backgrounds too, and the text on
+-- each of them is readable (4.5:1, WCAG AA for normal text).
+-- CHECK_EXTRA_PALETTES=<folder of base16 *.json> also tries those palettes
+-- (a desktop's own palette collection, say).
+check.global('selection_and_search_are_readable', function()
+  local probe = "autocmd VimEnter * ++once lua local p = require('czernous.theme').current.colors local function hl(n) return vim.api.nvim_get_hl(0, { name = n, link = false }) end local function hex(n) return n and ('#%06x'):format(n) or 'none' end local out = { 'READ base00=' .. p.base00, 'Normal=' .. hex(hl('Normal').fg) } for _, n in ipairs({ 'Visual', 'Search', 'CurSearch', 'IncSearch', 'Substitute' }) do out[#out + 1] = ('%s=%s/%s'):format(n, hex(hl(n).fg), hex(hl(n).bg)) end io.stdout:write(table.concat(out, ' ')) vim.cmd('qa!')"
+  local function luminance(colour)
+    local n = tonumber(colour:sub(2), 16)
+    local function channel(v) v = v / 255; return v <= 0.03928 and v / 12.92 or ((v + 0.055) / 1.055) ^ 2.4 end
+    return 0.2126 * channel(math.floor(n / 65536)) + 0.7152 * channel(math.floor(n / 256) % 256) + 0.0722 * channel(n % 256)
+  end
+  local function contrast(a, b)
+    local la, lb = luminance(a), luminance(b)
+    return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05)
+  end
+  local files = vim.fn.globpath(root .. '/palettes', '*.json', false, true)
+  local extra = vim.env.CHECK_EXTRA_PALETTES
+  if extra and extra ~= '' then vim.list_extend(files, vim.fn.globpath(extra, '*.json', false, true)) end
+  local bad, checked, worst = {}, 0, { stand = math.huge, read = math.huge }
+  for _, file in ipairs(files) do
+    local name = vim.fn.fnamemodify(file, ':t:r')
+    local r = vim.system({ vim.v.progpath, '--headless', '-n', '--cmd', probe },
+      { text = true, cwd = root, env = { NVIM_BASE16_PALETTE = file, XDG_CACHE_HOME = vim.fn.tempname() } }):wait(30000)
+    local out = (r.stdout or '') .. (r.stderr or '')
+    local base00, normal = out:match('READ base00=(#%x+) Normal=(#%x+)')
+    if not base00 then
+      bad[#bad + 1] = name .. ': no answer ' .. out:sub(1, 80)
+    else
+      checked = checked + 1
+      for _, group in ipairs({ 'Visual', 'Search', 'CurSearch', 'IncSearch', 'Substitute' }) do
+        local fg, bg = out:match(' ' .. group .. '=(%S+)/(%S+)')
+        if not bg or bg == 'none' then
+          bad[#bad + 1] = ('%s: %s has no background'):format(name, group)
+        else
+          local text = fg ~= 'none' and fg or normal -- no colour of its own: the text keeps its own
+          local stand, read = contrast(bg, base00), contrast(text, bg)
+          worst.stand, worst.read = math.min(worst.stand, stand), math.min(worst.read, read)
+          if stand < 1.3 then bad[#bad + 1] = ('%s: %s %s against the background %s is %.2f:1 (want 1.3)'):format(name, group, bg, base00, stand) end
+          if read < 4.5 then bad[#bad + 1] = ('%s: text %s on %s %s is %.2f:1 (want 4.5)'):format(name, text, group, bg, read) end
+        end
+      end
+    end
+  end
+  return #bad == 0 and checked >= 4, ('%d palettes checked (lowest: stands out %.2f, text %.2f); %s')
+    :format(checked, worst.stand, worst.read, table.concat(bad, ' | '))
+end)
+
 -- <leader>tp / <leader>tP step through the built-in palettes of the terminal's
 -- polarity; the choice is remembered. With a palette supplied from outside
 -- (Stylix) there is nothing to choose and it says so.

@@ -175,7 +175,11 @@ The rules (documented at the top of `theme.lua`, each with a check):
 1. dark or light follows the terminal;
 2. backgrounds are all-or-nothing: transparent everywhere, or one background
    everywhere; popups are told apart by their border;
-3. "the selected item" looks the same in every list;
+3. "the selected item" looks the same in every list, and a selection or search
+   match is seen and read in every palette: its background stands out from the
+   editor's (1.3:1 or more) and text on it is readable (4.5:1). A palette that
+   falls short is adjusted just far enough (Material Palenight's selection, for
+   one); the others look exactly as their authors made them;
 4. the result is cached, so a normal start replays it in under a millisecond;
 5. calm code: names are plain text, punctuation is muted, all keywords share one
    colour, comments are muted but readable, the matching bracket stands out;
